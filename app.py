@@ -3,184 +3,139 @@ import pandas as pd
 import numpy as np
 from pandas.tseries.offsets import MonthEnd
 
-st.set_page_config(page_title="BSF Officer Promotion & Seniority Calculator", layout="wide")
+st.set_page_config(page_title="BSF Officers Promotion Model", layout="wide")
 
 @st.cache_data
 def load_data():
     df = pd.read_csv('gradation_list.csv')
-    
-    # --- AUTOMATED DATA CLEANING ---
     df['S. No'] = pd.to_numeric(df['S. No'], errors='coerce')
     df = df.dropna(subset=['S. No'])
-    
     df['DOB'] = pd.to_datetime(df['Date of Birth'], errors='coerce')
     df = df.dropna(subset=['DOB'])
-    
     df = df.sort_values('S. No').reset_index(drop=True)
-    
-    # Calculate Retirements
     df['Retirement_Date'] = df['DOB'] + pd.DateOffset(years=60) + MonthEnd(0)
     df['IRLA No'] = df['IRLA No'].astype(str).str.strip()
-    
     return df
 
 def calculate_scenarios(df, target_sno, target_ret):
     target_sno = int(target_sno)
-    
     seniors = df[df['S. No'] < target_sno].copy()
-    retirements = seniors['Retirement_Date'].dropna().sort_values().reset_index(drop=True)
+    initial_rank = len(seniors) + 1
     
     baseline_thresh = {'ADG': 1, 'IG': 22, 'DIG': 181, 'COMDT': 554, '2IC': 1143, 'DC': 2452}
     cr_thresh = {'ADG': 1, 'IG': 33, 'DIG': 223, 'COMDT': 825, '2IC': 1698, 'DC': 2910}
     
-    results = {}
-    rank_order = ['DC', '2IC', 'COMDT', 'DIG', 'IG', 'ADG']
-    
-    # 1. Normal (Baseline)
-    promo_normal = {}
-    for rank in rank_order:
-        needed = target_sno - baseline_thresh[rank]
-        if needed <= 0:
-            promo_normal[rank] = "Already Achieved"
-        elif needed > len(retirements):
-            promo_normal[rank] = "Will not achieve"
-        else:
-            date = retirements.iloc[needed - 1]
-            promo_normal[rank] = date.date() if date <= target_ret else "Will not achieve"
-    results['Normal'] = promo_normal
-    
-    # 2. With CR (Cadre Restructuring)
-    promo_cr = {}
-    for rank in rank_order:
-        needed = target_sno - cr_thresh[rank]
-        if needed <= 0:
-            promo_cr[rank] = "Already Achieved"
-        elif needed > len(retirements):
-            promo_cr[rank] = "Will not achieve"
-        else:
-            date = retirements.iloc[needed - 1]
-            promo_cr[rank] = date.date() if date <= target_ret else "Will not achieve"
-    results['With CR'] = promo_cr
-    
-    # 3. With CR + VRS (Simulation)
-    np.random.seed(42)
-    active_rets = seniors['Retirement_Date'].dropna().values.copy()
-    current_date = pd.Timestamp('2026-05-01')
-    acc_comdt = 0.0; acc_2ic = 0.0; acc_dc = 0.0; acc_ac = 0.0
-    promo_vrs = {}
-    
-    # Pre-check for "Already Achieved" before starting the clock
-    for rank, thresh in cr_thresh.items():
-        if target_sno <= thresh:
-            promo_vrs[rank] = "Already Achieved"
-            
-    final_vrs_seniority = target_sno
-            
-    while current_date <= target_ret:
-        month_end = current_date + MonthEnd(0)
-        active_rets = active_rets[active_rets > np.datetime64(month_end)]
-        n_seniors = len(active_rets)
-        rank_pos = n_seniors + 1
-        
-        # Track the absolute final position for VRS scenario
-        final_vrs_seniority = rank_pos
-        
-        for rank, thresh in cr_thresh.items():
-            if rank not in promo_vrs and rank_pos <= thresh:
-                promo_vrs[rank] = month_end.date()
-                
-        if rank_pos <= 1: 
-            final_vrs_seniority = 1
-            break
-        
-        # Apply Rank-Tiered VRS Attrition
-        s_comdt = min(n_seniors, cr_thresh['COMDT'])
-        s_2ic = max(0, min(n_seniors, cr_thresh['2IC']) - cr_thresh['COMDT'])
-        s_dc = max(0, min(n_seniors, cr_thresh['DC']) - cr_thresh['2IC'])
-        s_ac = max(0, n_seniors - cr_thresh['DC'])
+    # Anchors for Reality Check (As of 30-April-2026)
+    anchors = {'COMDT': '19975597', '2IC': '10694886', 'DC': '11323334'}
+    anchor_snos = {k: int(df[df['IRLA No'] == v].iloc[0]['S. No']) if not df[df['IRLA No'] == v].empty else 0 for k, v in anchors.items()}
 
-        acc_comdt += (5.0/12.0) * (s_comdt/cr_thresh['COMDT']) if cr_thresh['COMDT'] else 0
-        acc_2ic += (10.0/12.0) * (s_2ic/873.0)
-        acc_dc += (20.0/12.0) * (s_dc/1212.0)
-        acc_ac += (40.0/12.0) * (s_ac/1528.0)
+    # Natural Seniority (Normal Model)
+    nat_ret_total = len(seniors[seniors['Retirement_Date'] <= target_ret])
+    final_sen_normal = initial_rank - nat_ret_total
+
+    # Start Point Adjustments (Natural clearance Jan-Apr 2026)
+    nat_clr_jan_apr = len(seniors[(seniors['Retirement_Date'] >= '2026-01-01') & (seniors['Retirement_Date'] <= '2026-04-30')])
+    adj_rank_start = max(1, initial_rank - nat_clr_jan_apr)
+
+    future_seniors_raw = seniors[seniors['Retirement_Date'] > '2026-04-30'].copy()
+    raw_future_rets = future_seniors_raw['Retirement_Date'].sort_values().reset_index(drop=True)
+
+    # 1. Normal Column
+    promo_normal = {}
+    for rank in ['DC', '2IC', 'COMDT', 'DIG', 'IG', 'ADG']:
+        needed = adj_rank_start - baseline_thresh[rank]
+        if needed <= 0: promo_normal[rank] = "Already Achieved"
+        elif needed > len(raw_future_rets): promo_normal[rank] = "Will not achieve"
+        else:
+            date = raw_future_rets.iloc[needed - 1]
+            promo_normal[rank] = date.strftime('%d-%b-%Y') if date <= target_ret else "Will not achieve"
+
+    # --- RECTIFIED ATTRITION SIMULATION ---
+    def run_attrition_sim(thresholds, use_vrs=True):
+        np.random.seed(42)
+        working_pool = future_seniors_raw.copy()
+        current_date = pd.Timestamp('2026-05-01')
+        promo_dates = {}
         
-        drops = int(acc_comdt) + int(acc_2ic) + int(acc_dc) + int(acc_ac)
-        acc_comdt -= int(acc_comdt); acc_2ic -= int(acc_2ic); acc_dc -= int(acc_dc); acc_ac -= int(acc_ac)
+        # Initial Anchor Check
+        for r, t in thresholds.items():
+            if r in anchor_snos and target_sno <= anchor_snos[r]: promo_dates[r] = "Already Achieved"
+            elif adj_rank_start <= t: promo_dates[r] = "Already Achieved"
+
+        initial_seniors_count = len(working_pool)
         
-        if drops > 0 and len(active_rets) > 0:
-            indices = np.random.choice(range(len(active_rets)), min(drops, len(active_rets)), replace=False)
-            active_rets = np.delete(active_rets, indices)
+        while current_date <= target_ret and not working_pool.empty:
+            m_end = current_date + MonthEnd(0)
             
-        current_date = (current_date + pd.DateOffset(months=1)).replace(day=1)
-        
-    results['CR + VRS'] = promo_vrs
-    
-    # Seniority Calculation
-    seniority = {}
+            # Step A: Natural Retirements (Age 60)
+            working_pool = working_pool[working_pool['Retirement_Date'] > m_end]
+            
+            # Step B: Cadre-Linked VRS (Reducing as cadre shrinks)
+            if use_vrs and not working_pool.empty:
+                current_vrs_annual = 50.0 * (len(working_pool) / initial_seniors_count)
+                monthly_vrs_goal = current_vrs_annual / 12.0
+                n_vrs = int(np.floor(monthly_vrs_goal + np.random.random()))
+                
+                if n_vrs > 0:
+                    # Officers removed here cannot be counted as natural retirements later (No double-counting)
+                    vrs_indices = np.random.choice(working_pool.index, min(n_vrs, len(working_pool)), replace=False)
+                    working_pool = working_pool.drop(vrs_indices)
+            
+            # Step C: Rank Calculation
+            rank_pos = len(working_pool) + 1
+            for r, t in thresholds.items():
+                if r not in promo_dates and rank_pos <= t:
+                    promo_dates[r] = m_end.strftime('%d-%b-%Y')
+            
+            if rank_pos <= 1: break
+            current_date = (current_date + pd.DateOffset(months=1)).replace(day=1)
+            
+        return promo_dates, (len(working_pool) + 1)
+
+    promo_vrs_only, vrs_final_sen = run_attrition_sim(baseline_thresh, use_vrs=True)
+    promo_cr_only, _ = run_attrition_sim(cr_thresh, use_vrs=False)
+    promo_cr_vrs, _ = run_attrition_sim(cr_thresh, use_vrs=True)
+
+    # Tracker Logic (Baseline)
+    seniority_tracker = {}
     for y in range(2027, target_ret.year + 1):
         jan1 = pd.Timestamp(year=y, month=1, day=1)
-        rets_before = (retirements < jan1).sum()
-        seniority[str(y)] = target_sno - rets_before
-        
-    # Add final retirement date column
-    rets_before_ret = (retirements < target_ret).sum()
-    baseline_final_sen = target_sno - rets_before_ret
-    seniority[f"Ret. ({target_ret.strftime('%b %y')})"] = baseline_final_sen
-        
-    return results, seniority, baseline_final_sen, final_vrs_seniority
-
-# --- UI Setup ---
-st.title("🛡️ BSF Officer Promotion & Seniority Calculator")
-st.markdown("Enter an IRLA Number to project future postings, cadre restructuring benefits, and seniority.")
-
-try:
-    df = load_data()
-except Exception as e:
-    st.error(f"Error loading CSV file: {e}")
-    st.stop()
-
-irla_input = st.text_input("Enter IRLA Number:", placeholder="e.g. 12349432")
-
-if irla_input:
-    officer = df[df['IRLA No'] == str(irla_input).strip()]
+        rets = (raw_future_rets < jan1).sum()
+        seniority_tracker[str(y)] = adj_rank_start - rets
     
-    if officer.empty:
-        st.warning("IRLA Number not found in the gradation list. Please check the number and try again.")
-    else:
-        target = officer.iloc[0]
-        st.header(f"Profile: {target['Name']}")
-        
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Current Rank", target['Rank'])
-        col2.metric("Gradation S.No", int(target['S. No']))
-        col3.metric("Date of Birth", target['DOB'].strftime('%d-%b-%Y'))
-        col4.metric("Retirement Date", target['Retirement_Date'].strftime('%d-%b-%Y'))
-        
-        st.divider()
-        
-        with st.spinner("Simulating retirement models and attrition scenarios..."):
-            promotions, seniority, base_final_sen, vrs_final_sen = calculate_scenarios(df, target['S. No'], target['Retirement_Date'])
-            
-        st.subheader("📈 Projected Promotion Dates")
-        ranks = ['DC', '2IC', 'COMDT', 'DIG', 'IG', 'ADG']
-        promo_df = pd.DataFrame({
-            'Rank': ranks,
-            'Normal (Age-60 Only)': [promotions['Normal'].get(r, 'Will not achieve') for r in ranks],
-            'With CR (New Vacancies)': [promotions['With CR'].get(r, 'Will not achieve') for r in ranks],
-            'With CR + VRS Attrition': [promotions['CR + VRS'].get(r, 'Will not achieve') for r in ranks]
-        })
-        st.table(promo_df.set_index('Rank'))
-        
-        st.divider()
+    return {'Normal': promo_normal, 
+            'VRS (No CR)': promo_vrs_only, 
+            'With CR': promo_cr_only, 
+            'CR + VRS': promo_cr_vrs}, seniority_tracker, vrs_final_sen, final_sen_normal
 
-        # --- NEW SECTION: SENIORITY AT RETIREMENT ---
-        st.subheader("🎯 Seniority on Date of Retirement")
-        colA, colB = st.columns(2)
-        colA.metric(label="Without VRS (Baseline)", value=f"Rank #{base_final_sen}")
-        colB.metric(label="With VRS (Simulation)", value=f"Rank #{vrs_final_sen}")
+# --- UI ---
+st.title("🛡️ BSF Officers Promotion Model")
+df = load_data()
+irla = st.text_input("Enter IRLA Number:")
 
-        st.divider()
+if irla:
+    res = df[df['IRLA No'] == str(irla).strip()]
+    if not res.empty:
+        target = res.iloc[0]
+        st.header(f"Officer: {target['Name']}")
         
-        st.subheader("📅 Projected Jan 1st Seniority Tracker (Baseline)")
-        sen_df = pd.DataFrame(list(seniority.items()), columns=['Timeline', 'Seniority Position'])
-        st.dataframe(sen_df.set_index('Timeline').T)
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Current Rank", target['Rank'])
+        c2.metric("S.No", int(target['S. No']))
+        c3.metric("DOB", target['DOB'].strftime('%d-%b-%Y'))
+        c4.metric("Retirement", target['Retirement_Date'].strftime('%d-%b-%Y'))
+        
+        promos, sens, f_vrs, f_norm = calculate_scenarios(df, target['S. No'], target['Retirement_Date'])
+        
+        st.divider()
+        st.subheader("📈 Rectified Promotion Projections")
+        st.table(pd.DataFrame(promos).reindex(['DC', '2IC', 'COMDT', 'DIG', 'IG', 'ADG']))
+        
+        st.divider()
+        c_a, c_b = st.columns(2)
+        c_a.metric("Final Seniority (Normal Model)", f"Rank #{max(1, int(f_norm))}", help="Based purely on natural age-60 retirements.")
+        c_b.metric("Final Seniority (VRS Model)", f"Rank #{max(1, int(f_vrs))}", help="VRS rate reduces as cadre shrinks; no double-counting of future retirements.")
+        
+        st.divider()
+        st.subheader("📅 Seniority Tracker (Jan 1st - Normal Model)")
+        st.dataframe(pd.DataFrame(list(sens.items()), columns=['Year', 'Seniority Pos']).set_index('Year').T)
