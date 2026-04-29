@@ -36,7 +36,7 @@ def calculate_scenarios(df, target_sno, target_ret):
     results = {}
     rank_order = ['DC', '2IC', 'COMDT', 'DIG', 'IG', 'ADG']
     
-    # 1. Normal (Baseline)
+    # --- 1. Normal (Baseline) ---
     promo_normal = {}
     for rank in rank_order:
         needed = target_sno - baseline_thresh[rank]
@@ -49,7 +49,52 @@ def calculate_scenarios(df, target_sno, target_ret):
             promo_normal[rank] = date.date() if date <= target_ret else "Will not achieve"
     results['Normal'] = promo_normal
     
-    # 2. With CR (Cadre Restructuring)
+    # --- 2. With VRS Attrition (No CR) ---
+    np.random.seed(42)
+    active_rets_base = seniors['Retirement_Date'].dropna().values.copy()
+    current_date = pd.Timestamp('2026-05-01')
+    acc_comdt_b = 0.0; acc_2ic_b = 0.0; acc_dc_b = 0.0; acc_ac_b = 0.0
+    promo_base_vrs = {}
+    
+    for rank, thresh in baseline_thresh.items():
+        if target_sno <= thresh:
+            promo_base_vrs[rank] = "Already Achieved"
+            
+    while current_date <= target_ret:
+        month_end = current_date + MonthEnd(0)
+        active_rets_base = active_rets_base[active_rets_base > np.datetime64(month_end)]
+        n_seniors = len(active_rets_base)
+        rank_pos = n_seniors + 1
+        
+        for rank, thresh in baseline_thresh.items():
+            if rank not in promo_base_vrs and rank_pos <= thresh:
+                promo_base_vrs[rank] = month_end.date()
+                
+        if rank_pos <= 1: break
+        
+        # Apply Rank-Tiered VRS Attrition (Using original capacities)
+        s_comdt = min(n_seniors, baseline_thresh['COMDT'])
+        s_2ic = max(0, min(n_seniors, baseline_thresh['2IC']) - baseline_thresh['COMDT'])
+        s_dc = max(0, min(n_seniors, baseline_thresh['DC']) - baseline_thresh['2IC'])
+        s_ac = max(0, n_seniors - baseline_thresh['DC'])
+
+        acc_comdt_b += (5.0/12.0) * (s_comdt/baseline_thresh['COMDT']) if baseline_thresh['COMDT'] else 0
+        acc_2ic_b += (10.0/12.0) * (s_2ic/589.0)
+        acc_dc_b += (20.0/12.0) * (s_dc/1309.0)
+        acc_ac_b += (40.0/12.0) * (s_ac/1528.0)
+        
+        drops = int(acc_comdt_b) + int(acc_2ic_b) + int(acc_dc_b) + int(acc_ac_b)
+        acc_comdt_b -= int(acc_comdt_b); acc_2ic_b -= int(acc_2ic_b); acc_dc_b -= int(acc_dc_b); acc_ac_b -= int(acc_ac_b)
+        
+        if drops > 0 and len(active_rets_base) > 0:
+            indices = np.random.choice(range(len(active_rets_base)), min(drops, len(active_rets_base)), replace=False)
+            active_rets_base = np.delete(active_rets_base, indices)
+            
+        current_date = (current_date + pd.DateOffset(months=1)).replace(day=1)
+        
+    results['VRS (No CR)'] = promo_base_vrs
+
+    # --- 3. With CR (Cadre Restructuring) ---
     promo_cr = {}
     for rank in rank_order:
         needed = target_sno - cr_thresh[rank]
@@ -62,14 +107,13 @@ def calculate_scenarios(df, target_sno, target_ret):
             promo_cr[rank] = date.date() if date <= target_ret else "Will not achieve"
     results['With CR'] = promo_cr
     
-    # 3. With CR + VRS (Simulation)
-    np.random.seed(42)
+    # --- 4. With CR + VRS (Simulation) ---
+    np.random.seed(42) # Reset seed so VRS random drops are identical across models
     active_rets = seniors['Retirement_Date'].dropna().values.copy()
     current_date = pd.Timestamp('2026-05-01')
     acc_comdt = 0.0; acc_2ic = 0.0; acc_dc = 0.0; acc_ac = 0.0
     promo_vrs = {}
     
-    # Pre-check for "Already Achieved" before starting the clock
     for rank, thresh in cr_thresh.items():
         if target_sno <= thresh:
             promo_vrs[rank] = "Already Achieved"
@@ -82,7 +126,6 @@ def calculate_scenarios(df, target_sno, target_ret):
         n_seniors = len(active_rets)
         rank_pos = n_seniors + 1
         
-        # Track the absolute final position for VRS scenario
         final_vrs_seniority = rank_pos
         
         for rank, thresh in cr_thresh.items():
@@ -93,7 +136,7 @@ def calculate_scenarios(df, target_sno, target_ret):
             final_vrs_seniority = 1
             break
         
-        # Apply Rank-Tiered VRS Attrition
+        # Apply Rank-Tiered VRS Attrition (Using new capacities)
         s_comdt = min(n_seniors, cr_thresh['COMDT'])
         s_2ic = max(0, min(n_seniors, cr_thresh['2IC']) - cr_thresh['COMDT'])
         s_dc = max(0, min(n_seniors, cr_thresh['DC']) - cr_thresh['2IC'])
@@ -104,83 +147,4 @@ def calculate_scenarios(df, target_sno, target_ret):
         acc_dc += (20.0/12.0) * (s_dc/1212.0)
         acc_ac += (40.0/12.0) * (s_ac/1528.0)
         
-        drops = int(acc_comdt) + int(acc_2ic) + int(acc_dc) + int(acc_ac)
-        acc_comdt -= int(acc_comdt); acc_2ic -= int(acc_2ic); acc_dc -= int(acc_dc); acc_ac -= int(acc_ac)
-        
-        if drops > 0 and len(active_rets) > 0:
-            indices = np.random.choice(range(len(active_rets)), min(drops, len(active_rets)), replace=False)
-            active_rets = np.delete(active_rets, indices)
-            
-        current_date = (current_date + pd.DateOffset(months=1)).replace(day=1)
-        
-    results['CR + VRS'] = promo_vrs
-    
-    # Seniority Calculation
-    seniority = {}
-    for y in range(2027, target_ret.year + 1):
-        jan1 = pd.Timestamp(year=y, month=1, day=1)
-        rets_before = (retirements < jan1).sum()
-        seniority[str(y)] = target_sno - rets_before
-        
-    # Add final retirement date column
-    rets_before_ret = (retirements < target_ret).sum()
-    baseline_final_sen = target_sno - rets_before_ret
-    seniority[f"Ret. ({target_ret.strftime('%b %y')})"] = baseline_final_sen
-        
-    return results, seniority, baseline_final_sen, final_vrs_seniority
-
-# --- UI Setup ---
-st.title("🛡️ BSF Officer Promotion & Seniority Calculator")
-st.markdown("Enter an IRLA Number to project future postings, cadre restructuring benefits, and seniority.")
-
-try:
-    df = load_data()
-except Exception as e:
-    st.error(f"Error loading CSV file: {e}")
-    st.stop()
-
-irla_input = st.text_input("Enter IRLA Number:", placeholder="e.g. 12349432")
-
-if irla_input:
-    officer = df[df['IRLA No'] == str(irla_input).strip()]
-    
-    if officer.empty:
-        st.warning("IRLA Number not found in the gradation list. Please check the number and try again.")
-    else:
-        target = officer.iloc[0]
-        st.header(f"Profile: {target['Name']}")
-        
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Current Rank", target['Rank'])
-        col2.metric("Gradation S.No", int(target['S. No']))
-        col3.metric("Date of Birth", target['DOB'].strftime('%d-%b-%Y'))
-        col4.metric("Retirement Date", target['Retirement_Date'].strftime('%d-%b-%Y'))
-        
-        st.divider()
-        
-        with st.spinner("Simulating retirement models and attrition scenarios..."):
-            promotions, seniority, base_final_sen, vrs_final_sen = calculate_scenarios(df, target['S. No'], target['Retirement_Date'])
-            
-        st.subheader("📈 Projected Promotion Dates")
-        ranks = ['DC', '2IC', 'COMDT', 'DIG', 'IG', 'ADG']
-        promo_df = pd.DataFrame({
-            'Rank': ranks,
-            'Normal (Age-60 Only)': [promotions['Normal'].get(r, 'Will not achieve') for r in ranks],
-            'With CR (New Vacancies)': [promotions['With CR'].get(r, 'Will not achieve') for r in ranks],
-            'With CR + VRS Attrition': [promotions['CR + VRS'].get(r, 'Will not achieve') for r in ranks]
-        })
-        st.table(promo_df.set_index('Rank'))
-        
-        st.divider()
-
-        # --- NEW SECTION: SENIORITY AT RETIREMENT ---
-        st.subheader("🎯 Seniority on Date of Retirement")
-        colA, colB = st.columns(2)
-        colA.metric(label="Without VRS (Baseline)", value=f"Rank #{base_final_sen}")
-        colB.metric(label="With VRS (Simulation)", value=f"Rank #{vrs_final_sen}")
-
-        st.divider()
-        
-        st.subheader("📅 Projected Jan 1st Seniority Tracker (Baseline)")
-        sen_df = pd.DataFrame(list(seniority.items()), columns=['Timeline', 'Seniority Position'])
-        st.dataframe(sen_df.set_index('Timeline').T)
+        drops = int(acc_comdt) + int(acc_2ic) + int(acc_dc) +
