@@ -30,7 +30,6 @@ def calculate_scenarios(df, target_sno, target_ret):
     seniors = df[df['S. No'] < target_sno].copy()
     retirements = seniors['Retirement_Date'].dropna().sort_values().reset_index(drop=True)
     
-    # NEW THRESHOLDS (Factoring in 1 ADG Post at the absolute top)
     baseline_thresh = {'ADG': 1, 'IG': 22, 'DIG': 181, 'COMDT': 554, '2IC': 1143, 'DC': 2452}
     cr_thresh = {'ADG': 1, 'IG': 33, 'DIG': 223, 'COMDT': 825, '2IC': 1698, 'DC': 2910}
     
@@ -75,17 +74,24 @@ def calculate_scenarios(df, target_sno, target_ret):
         if target_sno <= thresh:
             promo_vrs[rank] = "Already Achieved"
             
+    final_vrs_seniority = target_sno
+            
     while current_date <= target_ret:
         month_end = current_date + MonthEnd(0)
         active_rets = active_rets[active_rets > np.datetime64(month_end)]
         n_seniors = len(active_rets)
         rank_pos = n_seniors + 1
         
+        # Track the absolute final position for VRS scenario
+        final_vrs_seniority = rank_pos
+        
         for rank, thresh in cr_thresh.items():
             if rank not in promo_vrs and rank_pos <= thresh:
                 promo_vrs[rank] = month_end.date()
                 
-        if rank_pos <= 1: break
+        if rank_pos <= 1: 
+            final_vrs_seniority = 1
+            break
         
         # Apply Rank-Tiered VRS Attrition
         s_comdt = min(n_seniors, cr_thresh['COMDT'])
@@ -114,9 +120,14 @@ def calculate_scenarios(df, target_sno, target_ret):
     for y in range(2027, target_ret.year + 1):
         jan1 = pd.Timestamp(year=y, month=1, day=1)
         rets_before = (retirements < jan1).sum()
-        seniority[y] = target_sno - rets_before
+        seniority[str(y)] = target_sno - rets_before
         
-    return results, seniority
+    # Add final retirement date column
+    rets_before_ret = (retirements < target_ret).sum()
+    baseline_final_sen = target_sno - rets_before_ret
+    seniority[f"Ret. ({target_ret.strftime('%b %y')})"] = baseline_final_sen
+        
+    return results, seniority, baseline_final_sen, final_vrs_seniority
 
 # --- UI Setup ---
 st.title("🛡️ BSF Officer Promotion & Seniority Calculator")
@@ -148,7 +159,7 @@ if irla_input:
         st.divider()
         
         with st.spinner("Simulating retirement models and attrition scenarios..."):
-            promotions, seniority = calculate_scenarios(df, target['S. No'], target['Retirement_Date'])
+            promotions, seniority, base_final_sen, vrs_final_sen = calculate_scenarios(df, target['S. No'], target['Retirement_Date'])
             
         st.subheader("📈 Projected Promotion Dates")
         ranks = ['DC', '2IC', 'COMDT', 'DIG', 'IG', 'ADG']
@@ -161,8 +172,15 @@ if irla_input:
         st.table(promo_df.set_index('Rank'))
         
         st.divider()
+
+        # --- NEW SECTION: SENIORITY AT RETIREMENT ---
+        st.subheader("🎯 Seniority on Date of Retirement")
+        colA, colB = st.columns(2)
+        colA.metric(label="Without VRS (Baseline)", value=f"Rank #{base_final_sen}")
+        colB.metric(label="With VRS (Simulation)", value=f"Rank #{vrs_final_sen}")
+
+        st.divider()
         
-        st.subheader("📅 Projected Jan 1st Seniority (Baseline)")
-        sen_df = pd.DataFrame(list(seniority.items()), columns=['Year', 'Seniority Position'])
-        sen_df['Year'] = sen_df['Year'].astype(str)
-        st.dataframe(sen_df.set_index('Year').T)
+        st.subheader("📅 Projected Jan 1st Seniority Tracker (Baseline)")
+        sen_df = pd.DataFrame(list(seniority.items()), columns=['Timeline', 'Seniority Position'])
+        st.dataframe(sen_df.set_index('Timeline').T)
