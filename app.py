@@ -26,28 +26,41 @@ def calculate_scenarios(df, target_sno, target_ret):
     baseline_thresh = {'ADG': 1, 'IG': 22, 'DIG': 181, 'COMDT': 554, '2IC': 1143, 'DC': 2452}
     cr_thresh = {'ADG': 1, 'IG': 33, 'DIG': 223, 'COMDT': 825, '2IC': 1698, 'DC': 2910}
     
-    # --- THE REALITY ANCHOR: 30-04-2026 PROMOTIONS ---
+    # --- THE PERFECTED REALITY ANCHOR: 30-04-2026 ---
     cutoff_officer = df[df['IRLA No'] == '11323334']
-    historical_clearance = 0
+    total_clearance = 0
+    natural_clearance = 0
+    vrs_clearance = 0
     
     if not cutoff_officer.empty:
         cutoff_sno = int(cutoff_officer.iloc[0]['S. No'])
         cutoff_true_rank = len(df[df['S. No'] <= cutoff_sno])
         
-        # Calculate exactly how many seniors cleared out to allow the cutoff to reach DC
         if cutoff_true_rank > baseline_thresh['DC']:
-            historical_clearance = cutoff_true_rank - baseline_thresh['DC']
+            total_clearance = cutoff_true_rank - baseline_thresh['DC']
             
-    # Universally adjust the starting rank to match the established reality
-    adj_initial_rank = max(1, initial_rank - historical_clearance)
+            # Count how many of these were just natural retirements between Jan-Apr 2026
+            cutoff_seniors = df[df['S. No'] < cutoff_sno]
+            jan_apr_rets = cutoff_seniors[(cutoff_seniors['Retirement_Date'] >= '2026-01-01') & 
+                                          (cutoff_seniors['Retirement_Date'] <= '2026-04-30')]
+            natural_clearance = len(jan_apr_rets)
+            
+            # The remainder are the actual VRS / Extra Promotions
+            vrs_clearance = max(0, total_clearance - natural_clearance)
+
+    # Adjust the starting rank universally based on TOTAL clearance
+    adj_initial_rank = max(1, initial_rank - total_clearance)
     
-    # We must also drop the cleared officers from the retirement queue so they aren't double-counted
-    raw_retirements = seniors['Retirement_Date'].dropna().sort_values().values.copy()
-    if historical_clearance > 0 and len(raw_retirements) > 0:
-        drop_count = min(historical_clearance, len(raw_retirements))
-        raw_retirements = raw_retirements[drop_count:]
+    # Filter the active retirement pool to ONLY people retiring AFTER April 2026
+    future_retirements = seniors[seniors['Retirement_Date'] > '2026-04-30']['Retirement_Date'].dropna().values.copy()
+    
+    # Remove ONLY the VRS/Extra folks from the future pool (so they aren't double counted)
+    np.random.seed(42)
+    if vrs_clearance > 0 and len(future_retirements) > 0:
+        drop_idx = np.random.choice(range(len(future_retirements)), min(vrs_clearance, len(future_retirements)), replace=False)
+        future_retirements = np.delete(future_retirements, drop_idx)
         
-    rets_series = pd.Series(raw_retirements).reset_index(drop=True)
+    rets_series = pd.Series(future_retirements).sort_values().reset_index(drop=True)
 
     results = {}
     rank_order = ['DC', '2IC', 'COMDT', 'DIG', 'IG', 'ADG']
@@ -67,7 +80,7 @@ def calculate_scenarios(df, target_sno, target_ret):
     
     # --- 2. VRS (No CR) ---
     np.random.seed(42)
-    active_rets_base = raw_retirements.copy()
+    active_rets_base = future_retirements.copy()
     current_date = pd.Timestamp('2026-05-01')
     acc_comdt_b = 0.0; acc_2ic_b = 0.0; acc_dc_b = 0.0; acc_ac_b = 0.0
     promo_base_vrs = {}
@@ -80,7 +93,10 @@ def calculate_scenarios(df, target_sno, target_ret):
         month_end = current_date + MonthEnd(0)
         active_rets_base = active_rets_base[active_rets_base > np.datetime64(month_end)]
         n_seniors = len(active_rets_base)
-        rank_pos = n_seniors + 1
+        
+        # Rank position is based on the initial adjusted rank MINUS retirements since May 1
+        rets_since_may = len(future_retirements) - n_seniors
+        rank_pos = adj_initial_rank - rets_since_may
         
         for rank, thresh in baseline_thresh.items():
             if rank not in promo_base_vrs and rank_pos <= thresh:
@@ -100,10 +116,7 @@ def calculate_scenarios(df, target_sno, target_ret):
         
         drops = int(acc_comdt_b) + int(acc_2ic_b) + int(acc_dc_b) + int(acc_ac_b)
         
-        acc_comdt_b -= int(acc_comdt_b)
-        acc_2ic_b -= int(acc_2ic_b)
-        acc_dc_b -= int(acc_dc_b)
-        acc_ac_b -= int(acc_ac_b)
+        acc_comdt_b -= int(acc_comdt_b); acc_2ic_b -= int(acc_2ic_b); acc_dc_b -= int(acc_dc_b); acc_ac_b -= int(acc_ac_b)
         
         if drops > 0 and len(active_rets_base) > 0:
             indices = np.random.choice(range(len(active_rets_base)), min(drops, len(active_rets_base)), replace=False)
@@ -128,7 +141,7 @@ def calculate_scenarios(df, target_sno, target_ret):
     
     # --- 4. With CR + VRS ---
     np.random.seed(42)
-    active_rets = raw_retirements.copy()
+    active_rets = future_retirements.copy()
     current_date = pd.Timestamp('2026-05-01')
     acc_comdt = 0.0; acc_2ic = 0.0; acc_dc = 0.0; acc_ac = 0.0
     promo_vrs = {}
@@ -143,8 +156,9 @@ def calculate_scenarios(df, target_sno, target_ret):
         month_end = current_date + MonthEnd(0)
         active_rets = active_rets[active_rets > np.datetime64(month_end)]
         n_seniors = len(active_rets)
-        rank_pos = n_seniors + 1
         
+        rets_since_may = len(future_retirements) - n_seniors
+        rank_pos = adj_initial_rank - rets_since_may
         final_vrs_seniority = rank_pos
         
         for rank, thresh in cr_thresh.items():
@@ -167,10 +181,7 @@ def calculate_scenarios(df, target_sno, target_ret):
         
         drops = int(acc_comdt) + int(acc_2ic) + int(acc_dc) + int(acc_ac)
         
-        acc_comdt -= int(acc_comdt)
-        acc_2ic -= int(acc_2ic)
-        acc_dc -= int(acc_dc)
-        acc_ac -= int(acc_ac)
+        acc_comdt -= int(acc_comdt); acc_2ic -= int(acc_2ic); acc_dc -= int(acc_dc); acc_ac -= int(acc_ac)
         
         if drops > 0 and len(active_rets) > 0:
             indices = np.random.choice(range(len(active_rets)), min(drops, len(active_rets)), replace=False)
@@ -191,7 +202,7 @@ def calculate_scenarios(df, target_sno, target_ret):
     baseline_final_sen = adj_initial_rank - rets_before_ret
     seniority[f"Ret. ({target_ret.strftime('%b %y')})"] = baseline_final_sen
         
-    return results, seniority, baseline_final_sen, final_vrs_seniority, historical_clearance
+    return results, seniority, baseline_final_sen, final_vrs_seniority, total_clearance, natural_clearance, vrs_clearance
 
 # --- UI Setup ---
 st.title("🛡️ BSF Officer Promotion & Seniority Calculator")
@@ -223,10 +234,10 @@ if irla_input:
         st.divider()
         
         with st.spinner("Simulating retirement models and attrition scenarios..."):
-            promotions, seniority, base_final_sen, vrs_final_sen, clearance = calculate_scenarios(df, target['S. No'], target['Retirement_Date'])
+            promotions, seniority, base_final_sen, vrs_final_sen, tot_clr, nat_clr, vrs_clr = calculate_scenarios(df, target['S. No'], target['Retirement_Date'])
             
-        if clearance > 0:
-            st.info(f"**Reality Anchor Applied:** Model calibrated to recognize that {clearance} senior positions were cleared (via promotions/VRS) to facilitate the April 30, 2026 DC promotions.")
+        if tot_clr > 0:
+            st.info(f"**Reality Anchor Applied:** Model recognized **{tot_clr}** spots cleared before May 2026. ({nat_clr} Natural Retirements + {vrs_clr} VRS/Promotions).")
             
         st.subheader("📈 Projected Promotion Dates")
         ranks = ['DC', '2IC', 'COMDT', 'DIG', 'IG', 'ADG']
