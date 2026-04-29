@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from pandas.tseries.offsets import MonthEnd
 
-st.set_page_config(page_title="BSF Officer Promotional Model", layout="wide")
+st.set_page_config(page_title="BSF Officers Promotion Model", layout="wide")
 
 @st.cache_data
 def load_data():
@@ -25,7 +25,7 @@ def calculate_scenarios(df, target_sno, target_ret):
     baseline_thresh = {'ADG': 1, 'IG': 22, 'DIG': 181, 'COMDT': 554, '2IC': 1143, 'DC': 2452}
     cr_thresh = {'ADG': 1, 'IG': 33, 'DIG': 223, 'COMDT': 825, '2IC': 1698, 'DC': 2910}
     
-    # Anchors for Reality Check
+    # Anchors for Reality Check (As of 30-April-2026)
     anchors = {'COMDT': '19975597', '2IC': '10694886', 'DC': '11323334'}
     anchor_snos = {k: int(df[df['IRLA No'] == v].iloc[0]['S. No']) if not df[df['IRLA No'] == v].empty else 0 for k, v in anchors.items()}
 
@@ -33,7 +33,7 @@ def calculate_scenarios(df, target_sno, target_ret):
     nat_ret_total = len(seniors[seniors['Retirement_Date'] <= target_ret])
     final_sen_normal = initial_rank - nat_ret_total
 
-    # Start Point Adjustments (May 1st, 2026)
+    # Start Point Adjustments (Natural clearance Jan-Apr 2026)
     nat_clr_jan_apr = len(seniors[(seniors['Retirement_Date'] >= '2026-01-01') & (seniors['Retirement_Date'] <= '2026-04-30')])
     adj_rank_start = max(1, initial_rank - nat_clr_jan_apr)
 
@@ -53,7 +53,6 @@ def calculate_scenarios(df, target_sno, target_ret):
     # --- RECTIFIED ATTRITION SIMULATION ---
     def run_attrition_sim(thresholds, use_vrs=True):
         np.random.seed(42)
-        # Working pool that depletes as people leave
         working_pool = future_seniors_raw.copy()
         current_date = pd.Timestamp('2026-05-01')
         promo_dates = {}
@@ -63,34 +62,26 @@ def calculate_scenarios(df, target_sno, target_ret):
             if r in anchor_snos and target_sno <= anchor_snos[r]: promo_dates[r] = "Already Achieved"
             elif adj_rank_start <= t: promo_dates[r] = "Already Achieved"
 
-        # Initial Cadre Size for VRS Ratio
         initial_seniors_count = len(working_pool)
         
         while current_date <= target_ret and not working_pool.empty:
             m_end = current_date + MonthEnd(0)
             
-            # Step A: Natural Retirements
-            # We remove them from the pool. They are GONE.
+            # Step A: Natural Retirements (Age 60)
             working_pool = working_pool[working_pool['Retirement_Date'] > m_end]
             
-            # Step B: Cadre-Linked VRS (Proportional to remaining pool)
+            # Step B: Cadre-Linked VRS (Reducing as cadre shrinks)
             if use_vrs and not working_pool.empty:
-                # VRS rate scales with the size of the remaining cadre
-                # As pool reduces, the number of VRS cases drops proportionally
                 current_vrs_annual = 50.0 * (len(working_pool) / initial_seniors_count)
                 monthly_vrs_goal = current_vrs_annual / 12.0
-                
                 n_vrs = int(np.floor(monthly_vrs_goal + np.random.random()))
                 
                 if n_vrs > 0:
-                    # Pick officers to leave via VRS. 
-                    # Once they leave here, they are removed from the working_pool
-                    # and therefore CANNOT be counted as a 'natural retirement' later.
+                    # Officers removed here cannot be counted as natural retirements later (No double-counting)
                     vrs_indices = np.random.choice(working_pool.index, min(n_vrs, len(working_pool)), replace=False)
                     working_pool = working_pool.drop(vrs_indices)
             
             # Step C: Rank Calculation
-            # Your rank is simply your distance from the top of the remaining pool
             rank_pos = len(working_pool) + 1
             for r, t in thresholds.items():
                 if r not in promo_dates and rank_pos <= t:
@@ -101,7 +92,6 @@ def calculate_scenarios(df, target_sno, target_ret):
             
         return promo_dates, (len(working_pool) + 1)
 
-    # Calculate rectified scenarios
     promo_vrs_only, vrs_final_sen = run_attrition_sim(baseline_thresh, use_vrs=True)
     promo_cr_only, _ = run_attrition_sim(cr_thresh, use_vrs=False)
     promo_cr_vrs, _ = run_attrition_sim(cr_thresh, use_vrs=True)
@@ -119,7 +109,7 @@ def calculate_scenarios(df, target_sno, target_ret):
             'CR + VRS': promo_cr_vrs}, seniority_tracker, vrs_final_sen, final_sen_normal
 
 # --- UI ---
-st.title("🛡️ BSF Officer Seniority Reality Engine (Rectified)")
+st.title("🛡️ BSF Officers Promotion Model")
 df = load_data()
 irla = st.text_input("Enter IRLA Number:")
 
@@ -129,6 +119,12 @@ if irla:
         target = res.iloc[0]
         st.header(f"Officer: {target['Name']}")
         
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Current Rank", target['Rank'])
+        c2.metric("S.No", int(target['S. No']))
+        c3.metric("DOB", target['DOB'].strftime('%d-%b-%Y'))
+        c4.metric("Retirement", target['Retirement_Date'].strftime('%d-%b-%Y'))
+        
         promos, sens, f_vrs, f_norm = calculate_scenarios(df, target['S. No'], target['Retirement_Date'])
         
         st.divider()
@@ -137,8 +133,8 @@ if irla:
         
         st.divider()
         c_a, c_b = st.columns(2)
-        c_a.metric("Final Seniority (Normal Model)", f"Rank #{max(1, int(f_norm))}", help="Purely natural retirements.")
-        c_b.metric("Final Seniority (VRS Model)", f"Rank #{max(1, int(f_vrs))}", help="VRS rate reduces as cadre shrinks; zero double-counting.")
+        c_a.metric("Final Seniority (Normal Model)", f"Rank #{max(1, int(f_norm))}", help="Based purely on natural age-60 retirements.")
+        c_b.metric("Final Seniority (VRS Model)", f"Rank #{max(1, int(f_vrs))}", help="VRS rate reduces as cadre shrinks; no double-counting of future retirements.")
         
         st.divider()
         st.subheader("📅 Seniority Tracker (Jan 1st - Normal Model)")
