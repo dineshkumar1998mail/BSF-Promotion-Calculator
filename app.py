@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from pandas.tseries.offsets import MonthEnd
 
-st.set_page_config(page_title="BSF Officer Promotion & Seniority Calculator", layout="wide")
+st.set_page_config(page_title="BSF Officer Seniority Reality Engine", layout="wide")
 
 @st.cache_data
 def load_data():
@@ -49,8 +49,8 @@ def calculate_scenarios(df, target_sno, target_ret):
             date = raw_future_rets.iloc[needed - 1]
             promo_normal[rank] = date.strftime('%d-%b-%Y') if date <= target_ret else "Will not achieve"
 
-    # --- ADVANCED ADDITIVE VRS SIMULATION ---
-    def run_aggresive_vrs_sim(thresholds, start_rank):
+    # --- SIMULATION ENGINE ---
+    def run_attrition_sim(thresholds, use_vrs=True):
         np.random.seed(42)
         active_pool = future_seniors_raw.copy()
         current_date = pd.Timestamp('2026-05-01')
@@ -59,34 +59,24 @@ def calculate_scenarios(df, target_sno, target_ret):
         # Initial Anchor Check
         for r, t in thresholds.items():
             if r in anchor_snos and target_sno <= anchor_snos[r]: promo_dates[r] = "Already Achieved"
-            elif start_rank <= t: promo_dates[r] = "Already Achieved"
+            elif adj_rank_start <= t: promo_dates[r] = "Already Achieved"
 
         annual_vrs_total = 50.0
         
         while current_date <= target_ret and not active_pool.empty:
             m_end = current_date + MonthEnd(0)
-            
-            # Step A: Natural Retirements (Age 60)
             active_pool = active_pool[active_pool['Retirement_Date'] > m_end]
             
-            # Step B: Additive VRS Attrition
-            # We target the monthly goal (50/12)
-            monthly_vrs_target = annual_vrs_total / 12.0
-            n_vrs = int(np.floor(monthly_vrs_target + np.random.random()))
+            if use_vrs:
+                monthly_vrs_target = annual_vrs_total / 12.0
+                n_vrs = int(np.floor(monthly_vrs_target + np.random.random()))
+                if n_vrs > 0 and not active_pool.empty:
+                    # Filter for long-term seniors to make it additive
+                    long_term = active_pool[active_pool['Retirement_Date'] > (m_end + pd.DateOffset(months=24))]
+                    vrs_indices = np.random.choice(long_term.index if len(long_term) >= n_vrs else active_pool.index, 
+                                                   min(n_vrs, len(active_pool)), replace=False)
+                    active_pool = active_pool.drop(vrs_indices)
             
-            if n_vrs > 0 and not active_pool.empty:
-                # STRATEGY: Prioritize VRS from people who WON'T retire in the next 24 months
-                # This ensures VRS is 'Additive' to the natural retirement vacancies.
-                long_term_seniors = active_pool[active_pool['Retirement_Date'] > (m_end + pd.DateOffset(months=24))]
-                
-                if len(long_term_seniors) >= n_vrs:
-                    vrs_indices = np.random.choice(long_term_seniors.index, n_vrs, replace=False)
-                else:
-                    vrs_indices = np.random.choice(active_pool.index, min(n_vrs, len(active_pool)), replace=False)
-                
-                active_pool = active_pool.drop(vrs_indices)
-            
-            # Step C: Rank Update
             rank_pos = len(active_pool) + 1
             for r, t in thresholds.items():
                 if r not in promo_dates and rank_pos <= t:
@@ -97,8 +87,10 @@ def calculate_scenarios(df, target_sno, target_ret):
             
         return promo_dates, (len(active_pool) + 1)
 
-    promo_vrs, vrs_final_sen = run_aggresive_vrs_sim(baseline_thresh, adj_rank_start)
-    promo_cr, cr_final_sen = run_aggresive_vrs_sim(cr_thresh, adj_rank_start)
+    # Calculate separated scenarios
+    promo_vrs_only, vrs_final_sen = run_attrition_sim(baseline_thresh, use_vrs=True)
+    promo_cr_only, _ = run_attrition_sim(cr_thresh, use_vrs=False)
+    promo_cr_vrs, _ = run_attrition_sim(cr_thresh, use_vrs=True)
 
     # Tracker Logic (Baseline)
     seniority_tracker = {}
@@ -107,7 +99,10 @@ def calculate_scenarios(df, target_sno, target_ret):
         rets = (raw_future_rets < jan1).sum()
         seniority_tracker[str(y)] = adj_rank_start - rets
     
-    return {'Normal': promo_normal, 'VRS (No CR)': promo_vrs, 'With CR': promo_cr, 'CR + VRS': promo_cr}, seniority_tracker, vrs_final_sen, final_sen_normal
+    return {'Normal': promo_normal, 
+            'VRS (No CR)': promo_vrs_only, 
+            'With CR': promo_cr_only, 
+            'CR + VRS': promo_cr_vrs}, seniority_tracker, vrs_final_sen, final_sen_normal
 
 # --- UI ---
 st.title("🛡️ BSF Officer Seniority Reality Engine")
@@ -123,7 +118,8 @@ if irla:
         promos, sens, f_vrs, f_norm = calculate_scenarios(df, target['S. No'], target['Retirement_Date'])
         
         st.divider()
-        st.subheader("📈 Promotion Projections (Additive VRS Model)")
+        st.subheader("📈 Promotion Projections")
+        # Now showing 4 distinct columns
         st.table(pd.DataFrame(promos).reindex(['DC', '2IC', 'COMDT', 'DIG', 'IG', 'ADG']))
         
         st.divider()
