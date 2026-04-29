@@ -197,4 +197,4 @@ if irla_input:
         
         st.divider()
         
-        with st.spinner("Simulating retirement models
+        with st.spinner("Simulating retirement models and attrition scenarios..."):
