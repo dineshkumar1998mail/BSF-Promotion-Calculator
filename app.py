@@ -22,8 +22,6 @@ def calculate_scenarios(df, target_sno, target_ret):
     seniors = df[df['S. No'] < target_sno].copy()
     retirements = seniors['Retirement_Date'].dropna().sort_values().reset_index(drop=True)
     
-    # --- THE FIX: True Mathematical Rank ---
-    # Compensates for any garbage text rows deleted from the original CSV
     initial_rank = len(seniors) + 1
     
     baseline_thresh = {'ADG': 1, 'IG': 22, 'DIG': 181, 'COMDT': 554, '2IC': 1143, 'DC': 2452}
@@ -52,7 +50,6 @@ def calculate_scenarios(df, target_sno, target_ret):
     acc_comdt_b = 0.0; acc_2ic_b = 0.0; acc_dc_b = 0.0; acc_ac_b = 0.0
     promo_base_vrs = {}
     
-    # Uses True Rank to ensure exact sync with simulation
     for rank, thresh in baseline_thresh.items():
         if initial_rank <= thresh:
             promo_base_vrs[rank] = "Already Achieved"
@@ -81,7 +78,10 @@ def calculate_scenarios(df, target_sno, target_ret):
         
         drops = int(acc_comdt_b) + int(acc_2ic_b) + int(acc_dc_b) + int(acc_ac_b)
         
-        acc_comdt_b -= int(acc_comdt_b); acc_2ic_b -= int(acc_2ic_b); acc_dc_b -= int(acc_dc_b); acc_ac_b -= int(acc_ac_b)
+        acc_comdt_b -= int(acc_comdt_b)
+        acc_2ic_b -= int(acc_2ic_b)
+        acc_dc_b -= int(acc_dc_b)
+        acc_ac_b -= int(acc_ac_b)
         
         if drops > 0 and len(active_rets_base) > 0:
             indices = np.random.choice(range(len(active_rets_base)), min(drops, len(active_rets_base)), replace=False)
@@ -145,7 +145,10 @@ def calculate_scenarios(df, target_sno, target_ret):
         
         drops = int(acc_comdt) + int(acc_2ic) + int(acc_dc) + int(acc_ac)
         
-        acc_comdt -= int(acc_comdt); acc_2ic -= int(acc_2ic); acc_dc -= int(acc_dc); acc_ac -= int(acc_ac)
+        acc_comdt -= int(acc_comdt)
+        acc_2ic -= int(acc_2ic)
+        acc_dc -= int(acc_dc)
+        acc_ac -= int(acc_ac)
         
         if drops > 0 and len(active_rets) > 0:
             indices = np.random.choice(range(len(active_rets)), min(drops, len(active_rets)), replace=False)
@@ -198,3 +201,29 @@ if irla_input:
         st.divider()
         
         with st.spinner("Simulating retirement models and attrition scenarios..."):
+            promotions, seniority, base_final_sen, vrs_final_sen = calculate_scenarios(df, target['S. No'], target['Retirement_Date'])
+            
+        st.subheader("📈 Projected Promotion Dates")
+        ranks = ['DC', '2IC', 'COMDT', 'DIG', 'IG', 'ADG']
+        
+        promo_df = pd.DataFrame({
+            'Rank': ranks,
+            'Normal (Age-60 Only)': [promotions['Normal'].get(r, 'Will not achieve') for r in ranks],
+            'With VRS Attrition (No CR)': [promotions['VRS (No CR)'].get(r, 'Will not achieve') for r in ranks],
+            'With CR (New Vacancies)': [promotions['With CR'].get(r, 'Will not achieve') for r in ranks],
+            'With CR + VRS Attrition': [promotions['CR + VRS'].get(r, 'Will not achieve') for r in ranks]
+        })
+        st.table(promo_df.set_index('Rank'))
+        
+        st.divider()
+
+        st.subheader("🎯 Seniority on Date of Retirement")
+        colA, colB = st.columns(2)
+        colA.metric(label="Without VRS (Baseline)", value=f"Rank #{base_final_sen}")
+        colB.metric(label="With VRS (Simulation)", value=f"Rank #{vrs_final_sen}")
+
+        st.divider()
+        
+        st.subheader("📅 Projected Jan 1st Seniority Tracker (Baseline)")
+        sen_df = pd.DataFrame(list(seniority.items()), columns=['Timeline', 'Seniority Position'])
+        st.dataframe(sen_df.set_index('Timeline').T)
