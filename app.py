@@ -74,7 +74,7 @@ def calculate_scenarios(df, target_sno, target_ret):
         
         # Apply Rank-Tiered VRS Attrition (Using original capacities)
         s_comdt = min(n_seniors, baseline_thresh['COMDT'])
-        s_2ic = max(0, min(n_seniors, baseline_thresh['2IC']) - baseline_thresh['COMDT'])
+        drops = int(acc_comdt) + int(acc_2ic) + int(acc_dc) + int(acc_ac)
         s_dc = max(0, min(n_seniors, baseline_thresh['DC']) - baseline_thresh['2IC'])
         s_ac = max(0, n_seniors - baseline_thresh['DC'])
 
@@ -146,5 +146,4 @@ def calculate_scenarios(df, target_sno, target_ret):
         acc_2ic += (10.0/12.0) * (s_2ic/873.0)
         acc_dc += (20.0/12.0) * (s_dc/1212.0)
         acc_ac += (40.0/12.0) * (s_ac/1528.0)
-        
-        drops = int(acc_comdt) + int(acc_2ic) + int(acc_dc) +
+        drops = int(acc_comdt) + int(acc_2ic) + int(acc_dc) + int(acc_ac)
