@@ -26,11 +26,11 @@ def calculate_scenarios(df, target_sno, target_ret):
     baseline_thresh = {'ADG': 1, 'IG': 22, 'DIG': 181, 'COMDT': 554, '2IC': 1143, 'DC': 2452}
     cr_thresh = {'ADG': 1, 'IG': 33, 'DIG': 223, 'COMDT': 825, '2IC': 1698, 'DC': 2910}
     
-    # --- THE PERFECTED REALITY ANCHOR: 30-04-2026 ---
+    # --- REALITY ANCHOR: ONE-TIME EXEMPTION BATCH (April 30, 2026) ---
     cutoff_officer = df[df['IRLA No'] == '11323334']
-    total_clearance = 0
     natural_clearance = 0
-    vrs_clearance = 0
+    exemption_count = 0
+    cutoff_sno = 0
     
     if not cutoff_officer.empty:
         cutoff_sno = int(cutoff_officer.iloc[0]['S. No'])
@@ -39,27 +39,21 @@ def calculate_scenarios(df, target_sno, target_ret):
         if cutoff_true_rank > baseline_thresh['DC']:
             total_clearance = cutoff_true_rank - baseline_thresh['DC']
             
-            # Count how many of these were just natural retirements between Jan-Apr 2026
+            # Count ONLY the true natural retirements between Jan-Apr 2026
             cutoff_seniors = df[df['S. No'] < cutoff_sno]
             jan_apr_rets = cutoff_seniors[(cutoff_seniors['Retirement_Date'] >= '2026-01-01') & 
                                           (cutoff_seniors['Retirement_Date'] <= '2026-04-30')]
             natural_clearance = len(jan_apr_rets)
             
-            # The remainder are the actual VRS / Extra Promotions
-            vrs_clearance = max(0, total_clearance - natural_clearance)
+            # The rest were a one-time exemption (overcrowding the rank), not actual retirements!
+            exemption_count = max(0, total_clearance - natural_clearance)
 
-    # Adjust the starting rank universally based on TOTAL clearance
-    adj_initial_rank = max(1, initial_rank - total_clearance)
+    # We ONLY deduct actual natural retirements from the starting rank. 
+    # The exempted officers are still in the system, so juniors must wait for them!
+    adj_initial_rank = max(1, initial_rank - natural_clearance)
     
-    # Filter the active retirement pool to ONLY people retiring AFTER April 2026
+    # Filter the active retirement pool to people retiring AFTER April 2026
     future_retirements = seniors[seniors['Retirement_Date'] > '2026-04-30']['Retirement_Date'].dropna().values.copy()
-    
-    # Remove ONLY the VRS/Extra folks from the future pool (so they aren't double counted)
-    np.random.seed(42)
-    if vrs_clearance > 0 and len(future_retirements) > 0:
-        drop_idx = np.random.choice(range(len(future_retirements)), min(vrs_clearance, len(future_retirements)), replace=False)
-        future_retirements = np.delete(future_retirements, drop_idx)
-        
     rets_series = pd.Series(future_retirements).sort_values().reset_index(drop=True)
 
     results = {}
@@ -68,14 +62,18 @@ def calculate_scenarios(df, target_sno, target_ret):
     # --- 1. Normal (Baseline) ---
     promo_normal = {}
     for rank in rank_order:
-        needed = adj_initial_rank - baseline_thresh[rank]
-        if needed <= 0:
+        # Check if they were part of the one-time DC exemption batch
+        if rank == 'DC' and target_sno <= cutoff_sno:
             promo_normal[rank] = "Already Achieved"
-        elif needed > len(rets_series):
-            promo_normal[rank] = "Will not achieve"
         else:
-            date = rets_series.iloc[needed - 1]
-            promo_normal[rank] = date.date() if date <= target_ret else "Will not achieve"
+            needed = adj_initial_rank - baseline_thresh[rank]
+            if needed <= 0:
+                promo_normal[rank] = "Already Achieved"
+            elif needed > len(rets_series):
+                promo_normal[rank] = "Will not achieve"
+            else:
+                date = rets_series.iloc[needed - 1]
+                promo_normal[rank] = date.date() if date <= target_ret else "Will not achieve"
     results['Normal'] = promo_normal
     
     # --- 2. VRS (No CR) ---
@@ -86,7 +84,9 @@ def calculate_scenarios(df, target_sno, target_ret):
     promo_base_vrs = {}
     
     for rank, thresh in baseline_thresh.items():
-        if adj_initial_rank <= thresh:
+        if rank == 'DC' and target_sno <= cutoff_sno:
+            promo_base_vrs[rank] = "Already Achieved"
+        elif adj_initial_rank <= thresh:
             promo_base_vrs[rank] = "Already Achieved"
             
     while current_date <= target_ret:
@@ -94,7 +94,6 @@ def calculate_scenarios(df, target_sno, target_ret):
         active_rets_base = active_rets_base[active_rets_base > np.datetime64(month_end)]
         n_seniors = len(active_rets_base)
         
-        # Rank position is based on the initial adjusted rank MINUS retirements since May 1
         rets_since_may = len(future_retirements) - n_seniors
         rank_pos = adj_initial_rank - rets_since_may
         
@@ -129,14 +128,17 @@ def calculate_scenarios(df, target_sno, target_ret):
     # --- 3. With CR (New Vacancies) ---
     promo_cr = {}
     for rank in rank_order:
-        needed = adj_initial_rank - cr_thresh[rank]
-        if needed <= 0:
+        if rank == 'DC' and target_sno <= cutoff_sno:
             promo_cr[rank] = "Already Achieved"
-        elif needed > len(rets_series):
-            promo_cr[rank] = "Will not achieve"
         else:
-            date = rets_series.iloc[needed - 1]
-            promo_cr[rank] = date.date() if date <= target_ret else "Will not achieve"
+            needed = adj_initial_rank - cr_thresh[rank]
+            if needed <= 0:
+                promo_cr[rank] = "Already Achieved"
+            elif needed > len(rets_series):
+                promo_cr[rank] = "Will not achieve"
+            else:
+                date = rets_series.iloc[needed - 1]
+                promo_cr[rank] = date.date() if date <= target_ret else "Will not achieve"
     results['With CR'] = promo_cr
     
     # --- 4. With CR + VRS ---
@@ -147,7 +149,9 @@ def calculate_scenarios(df, target_sno, target_ret):
     promo_vrs = {}
     
     for rank, thresh in cr_thresh.items():
-        if adj_initial_rank <= thresh:
+        if rank == 'DC' and target_sno <= cutoff_sno:
+            promo_vrs[rank] = "Already Achieved"
+        elif adj_initial_rank <= thresh:
             promo_vrs[rank] = "Already Achieved"
             
     final_vrs_seniority = adj_initial_rank
@@ -202,7 +206,7 @@ def calculate_scenarios(df, target_sno, target_ret):
     baseline_final_sen = adj_initial_rank - rets_before_ret
     seniority[f"Ret. ({target_ret.strftime('%b %y')})"] = baseline_final_sen
         
-    return results, seniority, baseline_final_sen, final_vrs_seniority, total_clearance, natural_clearance, vrs_clearance
+    return results, seniority, baseline_final_sen, final_vrs_seniority, exemption_count, natural_clearance
 
 # --- UI Setup ---
 st.title("🛡️ BSF Officer Promotion & Seniority Calculator")
@@ -234,10 +238,10 @@ if irla_input:
         st.divider()
         
         with st.spinner("Simulating retirement models and attrition scenarios..."):
-            promotions, seniority, base_final_sen, vrs_final_sen, tot_clr, nat_clr, vrs_clr = calculate_scenarios(df, target['S. No'], target['Retirement_Date'])
+            promotions, seniority, base_final_sen, vrs_final_sen, exemptions, natural_rets = calculate_scenarios(df, target['S. No'], target['Retirement_Date'])
             
-        if tot_clr > 0:
-            st.info(f"**Reality Anchor Applied:** Model recognized **{tot_clr}** spots cleared before May 2026. ({nat_clr} Natural Retirements + {vrs_clr} VRS/Promotions).")
+        if exemptions > 0:
+            st.info(f"**One-Time Exemption Accounted For:** The model recognizes that **{exemptions}** extra officers were granted a one-time exemption to DC before May 2026. Because these officers are still active in the system, juniors will correctly wait for the resulting overcrowded ranks to clear naturally.")
             
         st.subheader("📈 Projected Promotion Dates")
         ranks = ['DC', '2IC', 'COMDT', 'DIG', 'IG', 'ADG']
