@@ -28,8 +28,7 @@ def calculate_scenarios(df, target_sno, target_ret):
     anchors = {'COMDT': '19975597', '2IC': '10694886', 'DC': '11323334'}
     anchor_snos = {k: int(df[df['IRLA No'] == v].iloc[0]['S. No']) if not df[df['IRLA No'] == v].empty else 0 for k, v in anchors.items()}
 
-    # --- NORMAL MODEL FINAL SENIORITY LOGIC ---
-    # Count how many seniors retire on or before the target's date
+    # Natural seniority calculation (Normal Model)
     nat_retirements_total = len(seniors[seniors['Retirement_Date'] <= target_ret])
     final_seniority_normal = initial_rank - nat_retirements_total
 
@@ -48,7 +47,7 @@ def calculate_scenarios(df, target_sno, target_ret):
         elif needed > len(raw_future_rets): promo_normal[rank] = "Will not achieve"
         else:
             date = raw_future_rets.iloc[needed - 1]
-            promo_normal[rank] = date.strftime('%d-%m-%y') if date <= target_ret else "Will not achieve"
+            promo_normal[rank] = date.strftime('%d-%B-%Y') if date <= target_ret else "Will not achieve"
 
     # --- DYNAMIC DECAY VRS SIMULATION ---
     def run_dynamic_vrs_sim(thresholds, start_rank):
@@ -80,7 +79,7 @@ def calculate_scenarios(df, target_sno, target_ret):
             rank_pos = len(active_seniors) + 1
             for r, t in thresholds.items():
                 if r not in promo_dates and rank_pos <= t:
-                    promo_dates[r] = m_end.strftime('%d-%m-%y')
+                    promo_dates[r] = m_end.strftime('%d-%B-%Y')
             
             if rank_pos <= 1: break
             current_date = (current_date + pd.DateOffset(months=1)).replace(day=1)
@@ -112,13 +111,15 @@ if irla_input:
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Current Rank", target['Rank'])
         c2.metric("S.No", int(target['S. No']))
-        c3.metric("DOB", target['DOB'].strftime('%d-%m-%y'))
-        c4.metric("Retirement", target['Retirement_Date'].strftime('%d-%m-%y'))
+        # Formatting UI Dates to DD-Month-YYYY
+        c3.metric("DOB", target['DOB'].strftime('%d-%B-%Y'))
+        c4.metric("Retirement", target['Retirement_Date'].strftime('%d-%B-%Y'))
         
         promos, sens, f_vrs, f_norm = calculate_scenarios(df, target['S. No'], target['Retirement_Date'])
         
         st.divider()
         st.subheader("📈 Projected Promotion Dates")
+        # Display the results table
         st.table(pd.DataFrame(promos).reindex(['DC', '2IC', 'COMDT', 'DIG', 'IG', 'ADG']))
         
         st.divider()
