@@ -7,22 +7,35 @@ st.set_page_config(page_title="BSF Officer Promotion & Seniority Calculator", la
 
 @st.cache_data
 def load_data():
-    # Make sure your CSV file is named 'gradation_list.csv' and placed in the same folder
     df = pd.read_csv('gradation_list.csv')
+    
+    # --- AUTOMATED DATA CLEANING ---
+    # 1. Force S.No to be a number. This will turn text like "COMMANDANT" or "S.No" into NaN
     df['S. No'] = pd.to_numeric(df['S. No'], errors='coerce')
-    df = df.dropna(subset=['S. No']).sort_values('S. No')
+    
+    # 2. Drop any row where S.No is NaN (Removes all the hidden header/rank separator rows)
+    df = df.dropna(subset=['S. No'])
+    
+    # 3. Drop rows with invalid or missing Dates of Birth
     df['DOB'] = pd.to_datetime(df['Date of Birth'], errors='coerce')
+    df = df.dropna(subset=['DOB'])
+    
+    # 4. Sort and reset the clean data
+    df = df.sort_values('S. No').reset_index(drop=True)
+    
+    # Calculate Retirements
     df['Retirement_Date'] = df['DOB'] + pd.DateOffset(years=60) + MonthEnd(0)
-    # Ensure IRLA No is a string for exact matching
     df['IRLA No'] = df['IRLA No'].astype(str).str.strip()
+    
     return df
 
 def calculate_scenarios(df, target_sno, target_ret):
+    # Ensure target_sno is strictly an integer
     target_sno = int(target_sno)
+    
     seniors = df[df['S. No'] < target_sno].copy()
     retirements = seniors['Retirement_Date'].dropna().sort_values().reset_index(drop=True)
     
-    # Define thresholds
     baseline_thresh = {'IG': 21, 'DIG': 180, 'COMDT': 553, '2IC': 1142, 'DC': 2451}
     cr_thresh = {'IG': 32, 'DIG': 222, 'COMDT': 824, '2IC': 1697, 'DC': 2909}
     
@@ -73,7 +86,7 @@ def calculate_scenarios(df, target_sno, target_ret):
                 
         if rank_pos <= 1: break
         
-        # Apply VRS
+        # Apply Rank-Tiered VRS Attrition
         s_comdt = min(n_seniors, cr_thresh['COMDT'])
         s_2ic = max(0, min(n_seniors, cr_thresh['2IC']) - cr_thresh['COMDT'])
         s_dc = max(0, min(n_seniors, cr_thresh['DC']) - cr_thresh['2IC'])
@@ -95,7 +108,7 @@ def calculate_scenarios(df, target_sno, target_ret):
         
     results['CR + VRS'] = promo_vrs
     
-    # Seniority Calculation (Baseline)
+    # Seniority Calculation
     seniority = {}
     for y in range(2027, target_ret.year + 1):
         jan1 = pd.Timestamp(year=y, month=1, day=1)
@@ -111,37 +124,33 @@ st.markdown("Enter an IRLA Number to project future postings, cadre restructurin
 try:
     df = load_data()
 except Exception as e:
-    st.error("Error loading CSV file. Please ensure 'gradation_list.csv' is in the same folder.")
+    st.error(f"Error loading CSV file: {e}")
     st.stop()
 
 irla_input = st.text_input("Enter IRLA Number:", placeholder="e.g. 12349432")
 
 if irla_input:
-    # Find Officer
-    officer = df[df['IRLA No'] == irla_input.strip()]
+    # Ensure input is string and stripped of whitespace
+    officer = df[df['IRLA No'] == str(irla_input).strip()]
     
     if officer.empty:
-        st.warning("IRLA Number not found in the gradation list.")
+        st.warning("IRLA Number not found in the gradation list. Please check the number and try again.")
     else:
         target = officer.iloc[0]
         st.header(f"Profile: {target['Name']}")
         
-        # Display Details
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Current Rank", target['Rank'])
         col2.metric("Gradation S.No", int(target['S. No']))
-        col3.metric("Date of Birth", target['DOB'].strftime('%d-%b-%Y') if pd.notnull(target['DOB']) else "N/A")
-        col4.metric("Retirement Date", target['Retirement_Date'].strftime('%d-%b-%Y') if pd.notnull(target['Retirement_Date']) else "N/A")
+        col3.metric("Date of Birth", target['DOB'].strftime('%d-%b-%Y'))
+        col4.metric("Retirement Date", target['Retirement_Date'].strftime('%d-%b-%Y'))
         
         st.divider()
         
-        # Calculate
         with st.spinner("Simulating retirement models and attrition scenarios..."):
             promotions, seniority = calculate_scenarios(df, target['S. No'], target['Retirement_Date'])
             
         st.subheader("📈 Projected Promotion Dates")
-        
-        # Prepare table for promotions
         ranks = ['DC', '2IC', 'COMDT', 'DIG', 'IG']
         promo_df = pd.DataFrame({
             'Rank': ranks,
