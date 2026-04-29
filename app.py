@@ -18,6 +18,7 @@ def load_data():
     return df
 
 def calculate_scenarios(df, target_sno, target_ret):
+    target_sno = int(target_sno)
     seniors = df[df['S. No'] < target_sno].copy()
     retirements = seniors['Retirement_Date'].dropna().sort_values().reset_index(drop=True)
     
