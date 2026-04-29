@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from pandas.tseries.offsets import MonthEnd
 
-st.set_page_config(page_title="BSF Officer Seniority Reality Engine", layout="wide")
+st.set_page_config(page_title="BSF Officer Promotional Model", layout="wide")
 
 @st.cache_data
 def load_data():
