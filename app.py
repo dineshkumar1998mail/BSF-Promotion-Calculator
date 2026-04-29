@@ -28,6 +28,11 @@ def calculate_scenarios(df, target_sno, target_ret):
     anchors = {'COMDT': '19975597', '2IC': '10694886', 'DC': '11323334'}
     anchor_snos = {k: int(df[df['IRLA No'] == v].iloc[0]['S. No']) if not df[df['IRLA No'] == v].empty else 0 for k, v in anchors.items()}
 
+    # --- NORMAL MODEL FINAL SENIORITY LOGIC ---
+    # Count how many seniors retire on or before the target's date
+    nat_retirements_total = len(seniors[seniors['Retirement_Date'] <= target_ret])
+    final_seniority_normal = initial_rank - nat_retirements_total
+
     # Natural clearance Jan-Apr 2026
     nat_clearance = len(seniors[(seniors['Retirement_Date'] >= '2026-01-01') & (seniors['Retirement_Date'] <= '2026-04-30')])
     adj_rank_start = max(1, initial_rank - nat_clearance)
@@ -52,34 +57,26 @@ def calculate_scenarios(df, target_sno, target_ret):
         current_date = pd.Timestamp('2026-05-01')
         promo_dates = {}
         
-        # Initial Anchor Check
         for r, t in thresholds.items():
             if r in anchor_snos and target_sno <= anchor_snos[r]: promo_dates[r] = "Already Achieved"
             elif start_rank <= t: promo_dates[r] = "Already Achieved"
 
         annual_vrs_rate = 50.0
-        decay_factor = 0.95 # 5% reduction per year
+        decay_factor = 0.95 
         
         while current_date <= target_ret and len(active_seniors) >= 0:
             m_end = current_date + MonthEnd(0)
-            
-            # A. Natural Retirements this month
             active_seniors = active_seniors[active_seniors['Retirement_Date'] > m_end]
-            
-            # B. Dynamic VRS Attrition
             if current_date.month == 1:
-                annual_vrs_rate *= decay_factor # Reduce VRS pool every year
+                annual_vrs_rate *= decay_factor 
             
             monthly_vrs_goal = annual_vrs_rate / 12.0
-            
-            # Distribute proportionally across senior ranks
             if not active_seniors.empty:
                 n_to_drop = int(np.floor(monthly_vrs_goal + np.random.random()))
                 if n_to_drop > 0:
                     drop_idx = np.random.choice(active_seniors.index, min(n_to_drop, len(active_seniors)), replace=False)
                     active_seniors = active_seniors.drop(drop_idx)
             
-            # C. Check Promotion
             rank_pos = len(active_seniors) + 1
             for r, t in thresholds.items():
                 if r not in promo_dates and rank_pos <= t:
@@ -93,14 +90,14 @@ def calculate_scenarios(df, target_sno, target_ret):
     promo_vrs_no_cr, vrs_final_sen = run_dynamic_vrs_sim(baseline_thresh, adj_rank_start)
     promo_cr, cr_final_sen = run_dynamic_vrs_sim(cr_thresh, adj_rank_start)
 
-    # Seniority Calculation (Baseline)
+    # Seniority Calculation (Baseline Tracker)
     seniority = {}
     for y in range(2027, target_ret.year + 1):
         jan1 = pd.Timestamp(year=y, month=1, day=1)
         rets = (raw_future_rets < jan1).sum()
         seniority[str(y)] = adj_rank_start - rets
     
-    return {'Normal': promo_normal, 'VRS (No CR)': promo_vrs_no_cr, 'With CR': promo_cr, 'CR + VRS': promo_cr}, seniority, vrs_final_sen
+    return {'Normal': promo_normal, 'VRS (No CR)': promo_vrs_no_cr, 'With CR': promo_cr, 'CR + VRS': promo_cr}, seniority, vrs_final_sen, final_seniority_normal
 
 # --- UI ---
 st.title("🛡️ BSF Officer Promotion & Seniority Calculator")
@@ -118,15 +115,18 @@ if irla_input:
         c3.metric("DOB", target['DOB'].strftime('%d-%m-%y'))
         c4.metric("Retirement", target['Retirement_Date'].strftime('%d-%m-%y'))
         
-        promos, sens, final_vrs = calculate_scenarios(df, target['S. No'], target['Retirement_Date'])
+        promos, sens, f_vrs, f_norm = calculate_scenarios(df, target['S. No'], target['Retirement_Date'])
         
         st.divider()
         st.subheader("📈 Projected Promotion Dates")
         st.table(pd.DataFrame(promos).reindex(['DC', '2IC', 'COMDT', 'DIG', 'IG', 'ADG']))
         
         st.divider()
-        st.metric("Final Seniority (VRS Simulation)", f"Rank #{max(1, int(final_vrs))}")
+        st.subheader("🎯 Seniority on Date of Retirement")
+        col_a, col_b = st.columns(2)
+        col_a.metric("Final Seniority (Normal Model)", f"Rank #{max(1, int(f_norm))}", help="Based purely on natural age-60 retirements.")
+        col_b.metric("Final Seniority (VRS Simulation)", f"Rank #{max(1, int(f_vrs))}", help="Accounting for the 50-person annual VRS decay model.")
         
         st.divider()
-        st.subheader("📅 Seniority Tracker (Jan 1st)")
+        st.subheader("📅 Seniority Tracker (Jan 1st - Normal Model)")
         st.dataframe(pd.DataFrame(list(sens.items()), columns=['Year', 'Seniority Pos']).set_index('Year').T)
