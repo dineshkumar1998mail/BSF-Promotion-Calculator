@@ -25,6 +25,7 @@ def calculate_scenarios(df, target_sno, target_ret):
     baseline_thresh = {'ADG': 1, 'IG': 22, 'DIG': 181, 'COMDT': 554, '2IC': 1143, 'DC': 2452}
     cr_thresh = {'ADG': 1, 'IG': 33, 'DIG': 223, 'COMDT': 825, '2IC': 1698, 'DC': 2910}
     
+    # Anchors for Reality Check
     anchors = {'COMDT': '19975597', '2IC': '10694886', 'DC': '11323334'}
     anchor_snos = {k: int(df[df['IRLA No'] == v].iloc[0]['S. No']) if not df[df['IRLA No'] == v].empty else 0 for k, v in anchors.items()}
 
@@ -49,10 +50,11 @@ def calculate_scenarios(df, target_sno, target_ret):
             date = raw_future_rets.iloc[needed - 1]
             promo_normal[rank] = date.strftime('%d-%b-%Y') if date <= target_ret else "Will not achieve"
 
-    # --- SIMULATION ENGINE ---
+    # --- RECTIFIED ATTRITION SIMULATION ---
     def run_attrition_sim(thresholds, use_vrs=True):
         np.random.seed(42)
-        active_pool = future_seniors_raw.copy()
+        # Working pool that depletes as people leave
+        working_pool = future_seniors_raw.copy()
         current_date = pd.Timestamp('2026-05-01')
         promo_dates = {}
         
@@ -61,23 +63,35 @@ def calculate_scenarios(df, target_sno, target_ret):
             if r in anchor_snos and target_sno <= anchor_snos[r]: promo_dates[r] = "Already Achieved"
             elif adj_rank_start <= t: promo_dates[r] = "Already Achieved"
 
-        annual_vrs_total = 50.0
+        # Initial Cadre Size for VRS Ratio
+        initial_seniors_count = len(working_pool)
         
-        while current_date <= target_ret and not active_pool.empty:
+        while current_date <= target_ret and not working_pool.empty:
             m_end = current_date + MonthEnd(0)
-            active_pool = active_pool[active_pool['Retirement_Date'] > m_end]
             
-            if use_vrs:
-                monthly_vrs_target = annual_vrs_total / 12.0
-                n_vrs = int(np.floor(monthly_vrs_target + np.random.random()))
-                if n_vrs > 0 and not active_pool.empty:
-                    # Filter for long-term seniors to make it additive
-                    long_term = active_pool[active_pool['Retirement_Date'] > (m_end + pd.DateOffset(months=24))]
-                    vrs_indices = np.random.choice(long_term.index if len(long_term) >= n_vrs else active_pool.index, 
-                                                   min(n_vrs, len(active_pool)), replace=False)
-                    active_pool = active_pool.drop(vrs_indices)
+            # Step A: Natural Retirements
+            # We remove them from the pool. They are GONE.
+            working_pool = working_pool[working_pool['Retirement_Date'] > m_end]
             
-            rank_pos = len(active_pool) + 1
+            # Step B: Cadre-Linked VRS (Proportional to remaining pool)
+            if use_vrs and not working_pool.empty:
+                # VRS rate scales with the size of the remaining cadre
+                # As pool reduces, the number of VRS cases drops proportionally
+                current_vrs_annual = 50.0 * (len(working_pool) / initial_seniors_count)
+                monthly_vrs_goal = current_vrs_annual / 12.0
+                
+                n_vrs = int(np.floor(monthly_vrs_goal + np.random.random()))
+                
+                if n_vrs > 0:
+                    # Pick officers to leave via VRS. 
+                    # Once they leave here, they are removed from the working_pool
+                    # and therefore CANNOT be counted as a 'natural retirement' later.
+                    vrs_indices = np.random.choice(working_pool.index, min(n_vrs, len(working_pool)), replace=False)
+                    working_pool = working_pool.drop(vrs_indices)
+            
+            # Step C: Rank Calculation
+            # Your rank is simply your distance from the top of the remaining pool
+            rank_pos = len(working_pool) + 1
             for r, t in thresholds.items():
                 if r not in promo_dates and rank_pos <= t:
                     promo_dates[r] = m_end.strftime('%d-%b-%Y')
@@ -85,9 +99,9 @@ def calculate_scenarios(df, target_sno, target_ret):
             if rank_pos <= 1: break
             current_date = (current_date + pd.DateOffset(months=1)).replace(day=1)
             
-        return promo_dates, (len(active_pool) + 1)
+        return promo_dates, (len(working_pool) + 1)
 
-    # Calculate separated scenarios
+    # Calculate rectified scenarios
     promo_vrs_only, vrs_final_sen = run_attrition_sim(baseline_thresh, use_vrs=True)
     promo_cr_only, _ = run_attrition_sim(cr_thresh, use_vrs=False)
     promo_cr_vrs, _ = run_attrition_sim(cr_thresh, use_vrs=True)
@@ -105,7 +119,7 @@ def calculate_scenarios(df, target_sno, target_ret):
             'CR + VRS': promo_cr_vrs}, seniority_tracker, vrs_final_sen, final_sen_normal
 
 # --- UI ---
-st.title("🛡️ BSF Officer Seniority Reality Engine")
+st.title("🛡️ BSF Officer Seniority Reality Engine (Rectified)")
 df = load_data()
 irla = st.text_input("Enter IRLA Number:")
 
@@ -118,14 +132,13 @@ if irla:
         promos, sens, f_vrs, f_norm = calculate_scenarios(df, target['S. No'], target['Retirement_Date'])
         
         st.divider()
-        st.subheader("📈 Promotion Projections")
-        # Now showing 4 distinct columns
+        st.subheader("📈 Rectified Promotion Projections")
         st.table(pd.DataFrame(promos).reindex(['DC', '2IC', 'COMDT', 'DIG', 'IG', 'ADG']))
         
         st.divider()
         c_a, c_b = st.columns(2)
-        c_a.metric("Final Seniority (Normal)", f"Rank #{max(1, int(f_norm))}")
-        c_b.metric("Final Seniority (VRS Attrition)", f"Rank #{max(1, int(f_vrs))}")
+        c_a.metric("Final Seniority (Normal Model)", f"Rank #{max(1, int(f_norm))}", help="Purely natural retirements.")
+        c_b.metric("Final Seniority (VRS Model)", f"Rank #{max(1, int(f_vrs))}", help="VRS rate reduces as cadre shrinks; zero double-counting.")
         
         st.divider()
         st.subheader("📅 Seniority Tracker (Jan 1st - Normal Model)")
