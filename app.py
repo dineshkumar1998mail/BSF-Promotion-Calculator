@@ -25,8 +25,8 @@ def calculate_scenarios(df, target_sno, target_ret):
     baseline_thresh = {'ADG': 1, 'IG': 22, 'DIG': 181, 'COMDT': 554, '2IC': 1143, 'DC': 2452}
     cr_thresh = {'ADG': 1, 'IG': 33, 'DIG': 223, 'COMDT': 825, '2IC': 1698, 'DC': 2910}
     
-    # Anchors for Reality Check (As of 30-April-2026)
-    anchors = {'COMDT': '19975597', '2IC': '10694886', 'DC': '11323334'}
+    # Anchors for Reality Check (As of 08-July-2026)
+    anchors = {'COMDT': '19975597', '2IC': '10694886', 'DC': '41427187'}
     anchor_snos = {k: int(df[df['IRLA No'] == v].iloc[0]['S. No']) if not df[df['IRLA No'] == v].empty else 0 for k, v in anchors.items()}
 
     # Natural Seniority (Normal Model)
