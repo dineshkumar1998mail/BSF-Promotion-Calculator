@@ -72,11 +72,20 @@ def calculate_scenarios(df, target_sno, target_ret):
         sim_date = (current_today + pd.DateOffset(months=1)).replace(day=1)
         promo_dates = {}
         
-        # Initial Boundary Enforcement
+        # Calculate dynamic gates ahead of loop execution
+        effective_gates = {}
         for r, cap in capacities.items():
-            if r in anchor_snos and target_sno <= anchor_snos[r]:
-                promo_dates[r] = "Already Achieved"
-            elif not is_cr and target_sno <= cap:
+            base_anchor = anchor_snos.get(r, baseline_capacities[r])
+            if is_cr:
+                # Expand the gate dynamically based on how much structural growth the rank got
+                expansion_bonus = capacities[r] - baseline_capacities[r]
+                effective_gates[r] = base_anchor + expansion_bonus
+            else:
+                effective_gates[r] = base_anchor
+
+        # Initial Boundary Enforcement
+        for r, gate in effective_gates.items():
+            if target_sno <= gate:
                 promo_dates[r] = "Already Achieved"
 
         while sim_date <= target_ret and not sim_pool.empty:
@@ -99,32 +108,23 @@ def calculate_scenarios(df, target_sno, target_ret):
             sim_progress = initial_pool_size - len(sim_pool)
             current_absolute_sno = target_sno - sim_progress
             
-            for r, cap in capacities.items():
+            for r, gate in effective_gates.items():
                 if r not in promo_dates:
-                    # Under CR, structural post expansion handles the shift directly
-                    if is_cr:
-                        if current_absolute_sno <= cap:
-                            promo_dates[r] = m_end.strftime('%d-%b-%Y')
-                    else:
-                        anchor_ref = anchor_snos.get(r, cap)
-                        if current_absolute_sno <= anchor_ref:
-                            promo_dates[r] = m_end.strftime('%d-%b-%Y')
+                    if current_absolute_sno <= gate:
+                        promo_dates[r] = m_end.strftime('%d-%b-%Y')
             
             if current_absolute_sno <= 1:
                 break
             sim_date = (sim_date + pd.DateOffset(months=1)).replace(day=1)
             
         # Complete unreached fields cleanly
-        for r, cap in capacities.items():
+        for r, gate in effective_gates.items():
             if r not in promo_dates:
-                if is_cr:
-                    promo_dates[r] = "Already Achieved" if target_sno <= cap else "Will not achieve"
-                else:
-                    promo_dates[r] = "Already Achieved" if target_sno <= anchor_snos.get(r, cap) else "Will not achieve"
+                promo_dates[r] = "Already Achieved" if target_sno <= gate else "Will not achieve"
                 
         return promo_dates, max(1, len(sim_pool) + 1)
 
-    # Compute separated isolated scenarios
+    # Compute clean, isolated models
     promo_vrs_only, vrs_final_sen = run_simulation(baseline_capacities, use_vrs=True, is_cr=False)
     promo_cr_only, _ = run_simulation(cr_capacities, use_vrs=False, is_cr=True)
     promo_cr_vrs, _ = run_simulation(cr_capacities, use_vrs=True, is_cr=True)
