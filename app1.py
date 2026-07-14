@@ -39,26 +39,21 @@ def calculate_scenarios(df, target_sno, target_ret):
     current_today = pd.Timestamp(datetime.date.today())
 
     # --- SIMULATION ENGINE CONFIGURATIONS ---
-    # Capacities relative to the absolute top of the pyramid (Rank 1)
     baseline_capacities = {'ADG': 1, 'IG': 22, 'DIG': 181, 'COMDT': 554, '2IC': 1143, 'DC': 2452}
     cr_capacities = {'ADG': 1, 'IG': 33, 'DIG': 223, 'COMDT': 825, '2IC': 1698, 'DC': 2910}
 
     # --- 1. NORMAL COLUMN LOGIC (PURE RETIREMENTS) ---
-    # Track the real pool of seniors ahead of the officer who are still in service
     active_seniors_normal = df[(df['S. No'] < target_sno) & (df['Retirement_Date'] > current_today)].copy()
     raw_future_rets = active_seniors_normal['Retirement_Date'].sort_values().reset_index(drop=True)
     
-    # Normal Final Seniority: count how many seniors retire after today but before/on target's retirement date
     rem_seniors_retiring_before_target = len(active_seniors_normal[active_seniors_normal['Retirement_Date'] <= target_ret])
     final_sen_normal = (len(active_seniors_normal) + 1) - rem_seniors_retiring_before_target
 
     promo_normal = {}
     for rank in ['DC', '2IC', 'COMDT', 'DIG', 'IG', 'ADG']:
-        # If the target is already past the active rank anchor, mark achieved
         if rank in anchor_snos and target_sno <= anchor_snos[rank]:
             promo_normal[rank] = "Already Achieved"
         else:
-            # Distance is calculated strictly relative to the live anchor
             anchor_ref = anchor_snos.get(rank, baseline_capacities[rank])
             effective_rank_pos = max(1, target_sno - anchor_ref)
             
@@ -73,13 +68,11 @@ def calculate_scenarios(df, target_sno, target_ret):
     # --- 2. ATTRITION & RESTRUCTURING SIMULATION ENGINE ---
     def run_simulation(capacities, use_vrs=True):
         np.random.seed(42)
-        # Filter seniors who are still actively serving today
         sim_pool = df[(df['S. No'] < target_sno) & (df['Retirement_Date'] > current_today)].copy()
         
         sim_date = (current_today + pd.DateOffset(months=1)).replace(day=1)
         promo_dates = {}
         
-        # Check initial positions against active anchors before simulation loop
         for r in capacities.keys():
             if r in anchor_snos and target_sno <= anchor_snos[r]:
                 promo_dates[r] = "Already Achieved"
@@ -89,10 +82,8 @@ def calculate_scenarios(df, target_sno, target_ret):
         while sim_date <= target_ret and not sim_pool.empty:
             m_end = sim_date + MonthEnd(0)
             
-            # Natural exits
             sim_pool = sim_pool[sim_pool['Retirement_Date'] > m_end]
             
-            # Cadre-linked proportional VRS attrition
             if use_vrs and not sim_pool.empty:
                 current_vrs_annual = 50.0 * (len(sim_pool) / initial_pool_size)
                 monthly_vrs_goal = current_vrs_annual / 12.0
@@ -102,15 +93,12 @@ def calculate_scenarios(df, target_sno, target_ret):
                     vrs_idx = np.random.choice(sim_pool.index, min(n_vrs, len(sim_pool)), replace=False)
                     sim_pool = sim_pool.drop(vrs_idx)
             
-            # Calculate current relative distance from active structural capacity boundaries
             current_rank_pos = len(sim_pool) + 1
             for r, cap in capacities.items():
                 if r not in promo_dates:
-                    # Adjust boundary condition relative to active anchor position
                     anchor_ref = anchor_snos.get(r, cap)
                     distance_to_gate = target_sno - anchor_ref
                     
-                    # If vacancies eaten by simulation equal/exceed the required distance gap
                     sim_progress = initial_pool_size - len(sim_pool)
                     if sim_progress >= distance_to_gate or current_rank_pos <= cap:
                         promo_dates[r] = m_end.strftime('%d-%b-%Y')
@@ -119,19 +107,16 @@ def calculate_scenarios(df, target_sno, target_ret):
                 break
             sim_date = (sim_date + pd.DateOffset(months=1)).replace(day=1)
             
-        # Cleanup remaining ranks
         for r in capacities.keys():
             if r not in promo_dates:
                 promo_dates[r] = "Already Achieved" if target_sno <= anchor_snos.get(r, capacities[r]) else "Will not achieve"
                 
         return promo_dates, (len(sim_pool) + 1)
 
-    # Compute clean, isolated models
     promo_vrs_only, vrs_final_sen = run_simulation(baseline_capacities, use_vrs=True)
     promo_cr_only, _ = run_simulation(cr_capacities, use_vrs=False)
     promo_cr_vrs, _ = run_simulation(cr_capacities, use_vrs=True)
 
-    # Seniority Tracker Timeline (Normal Model)
     seniority_tracker = {}
     for y in range(current_today.year + 1, target_ret.year + 1):
         jan1 = pd.Timestamp(year=y, month=1, day=1)
@@ -147,10 +132,12 @@ def calculate_scenarios(df, target_sno, target_ret):
 # --- UI LAYER ---
 st.title("🛡️ BSF Officers Promotion Model")
 df = load_data()
+
+# Variable named accurately here
 arla = st.text_input("Enter IRLA Number:")
 
-if irla:
-    res = df[df['IRLA No'] == str(irla).strip()]
+if arla:
+    res = df[df['IRLA No'] == str(arla).strip()]
     if not res.empty:
         target = res.iloc[0]
         st.header(f"Officer: {target['Name']}")
