@@ -21,24 +21,31 @@ def load_data():
 def calculate_scenarios(df, target_sno, target_ret):
     target_sno = int(target_sno)
     
-    # --- LIVE PRODUCTION REALITY ANCHORS ---
+    # --- CORE GROUND REALITY INPUTS ---
     anchors = {'COMDT': '19975610', '2IC': '10694886', 'DC': '41427187'}
     
-    # Resolve Anchor IRLAs to their current S.No positions
+    # Structural Gate Positions (Absolute Baseline Pyramidal Capacities)
+    baseline_capacities = {'ADG': 1, 'IG': 22, 'DIG': 181, 'COMDT': 554, '2IC': 1143, 'DC': 2452}
+    cr_capacities = {'ADG': 1, 'IG': 33, 'DIG': 223, 'COMDT': 825, '2IC': 1698, 'DC': 2910}
+    
+    # Resolve explicit anchors to current S.No positions
     anchor_snos = {}
-    for rank, irla_val in anchors.items():
-        match = df[df['IRLA No'] == irla_val]
+    for rank in ['COMDT', '2IC', 'DC']:
+        match = df[df['IRLA No'] == anchors[rank]]
         if not match.empty:
             anchor_snos[rank] = int(match.iloc[0]['S. No'])
         else:
-            fallback_thresh = {'COMDT': 554, '2IC': 1143, 'DC': 2452}
-            anchor_snos[rank] = fallback_thresh[rank]
+            anchor_snos[rank] = baseline_capacities[rank]
+
+    # --- CASCADING REALITY ANCHOR MATHEMATICS ---
+    # Derive operational anchors for DIG and IG relative to the moving Commandant line
+    comdt_shift = anchor_snos['COMDT'] - baseline_capacities['COMDT']
+    
+    anchor_snos['DIG'] = max(baseline_capacities['DIG'], baseline_capacities['DIG'] + comdt_shift)
+    anchor_snos['IG'] = max(baseline_capacities['IG'], baseline_capacities['IG'] + comdt_shift)
+    anchor_snos['ADG'] = baseline_capacities['ADG']
 
     current_today = pd.Timestamp(datetime.date.today())
-
-    # Structural Gate Positions (Absolute Pyramidal Capacities)
-    baseline_capacities = {'ADG': 1, 'IG': 22, 'DIG': 181, 'COMDT': 554, '2IC': 1143, 'DC': 2452}
-    cr_capacities = {'ADG': 1, 'IG': 33, 'DIG': 223, 'COMDT': 825, '2IC': 1698, 'DC': 2910}
 
     # --- 1. FIXED PURE RETIREMENTS COLUMN (NORMAL) ---
     active_seniors_normal = df[(df['S. No'] < target_sno) & (df['Retirement_Date'] > current_today)].copy()
@@ -49,11 +56,10 @@ def calculate_scenarios(df, target_sno, target_ret):
 
     promo_normal = {}
     for rank in ['DC', '2IC', 'COMDT', 'DIG', 'IG', 'ADG']:
-        if rank in anchor_snos and target_sno <= anchor_snos[rank]:
+        if target_sno <= anchor_snos[rank]:
             promo_normal[rank] = "Already Achieved"
         else:
-            anchor_ref = anchor_snos.get(rank, baseline_capacities[rank])
-            effective_rank_pos = target_sno - anchor_ref
+            effective_rank_pos = target_sno - anchor_snos[rank]
             
             if effective_rank_pos <= 0:
                 promo_normal[rank] = "Already Achieved"
@@ -75,9 +81,9 @@ def calculate_scenarios(df, target_sno, target_ret):
         # Calculate dynamic gates ahead of loop execution
         effective_gates = {}
         for r, cap in capacities.items():
-            base_anchor = anchor_snos.get(r, baseline_capacities[r])
+            base_anchor = anchor_snos[r]
             if is_cr:
-                # Expand the gate dynamically based on how much structural growth the rank got
+                # Expand the gate dynamically based on structural growth margins
                 expansion_bonus = capacities[r] - baseline_capacities[r]
                 effective_gates[r] = base_anchor + expansion_bonus
             else:
@@ -94,7 +100,7 @@ def calculate_scenarios(df, target_sno, target_ret):
             # 1. Clear Natural Retirements
             sim_pool = sim_pool[sim_pool['Retirement_Date'] > m_end]
             
-            # 2. Apply Proportional Attrition (Linked accurately to the active pool length)
+            # 2. Apply Proportional Attrition
             if use_vrs and not sim_pool.empty:
                 current_vrs_annual = 50.0 * (len(sim_pool) / initial_pool_size)
                 monthly_vrs_goal = current_vrs_annual / 12.0
