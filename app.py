@@ -503,7 +503,7 @@ st.markdown(f"""
 
 st.markdown("#### 🔍 Type IRLA and press Enter")
 irla = st.text_input("Type IRLA and press Enter", label_visibility="collapsed",
-                     placeholder="Type IRLA and press Enter  (e.g. 19975580)",
+                     placeholder="Type IRLA and press Enter",
                      help="Your IRLA number as printed in the gradation list")
 
 if irla:
