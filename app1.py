@@ -1,7 +1,6 @@
 import io
 import os
 
-import altair as alt
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -16,10 +15,6 @@ FULL_RANK = {'AC': 'Assistant Commandant', 'DC': 'Deputy Commandant',
              '2IC': 'Second-in-Command', 'COMDT': 'Commandant',
              'DIG': 'Deputy Inspector General', 'IG': 'Inspector General',
              'ADG': 'Additional Director General'}
-
-RANK_COLORS = {'AC': '#8FA6BF', 'DC': '#3E6C9A', '2IC': '#1F4E79',
-               'COMDT': '#0F3057', 'DIG': '#0B7285', 'IG': '#C9A227',
-               'ADG': '#8A6D1F'}
 
 # Static fallback thresholds (seniority position at which promotion occurs)
 BASELINE_THRESH = {'ADG': 1, 'IG': 22, 'DIG': 181, 'COMDT': 554, '2IC': 1143, 'DC': 2452}
@@ -329,75 +324,8 @@ def make_verdict(scenarios, current_code):
     return base
 
 
-def build_timeline(scenarios, current_code, as_on, ret_date):
-    """One row per (scenario, rank-held-period) for a Gantt-style chart."""
-    idx = {r: i for i, r in enumerate(RANK_ORDER)}
-    rows = []
-    for scen in SCENARIO_ORDER:
-        promos = scenarios[scen]
-        # starting rank = highest 'Already Achieved', else current rank from list
-        start_rank = current_code
-        for r in RANK_ORDER:
-            if promos.get(r) == "Already Achieved":
-                start_rank = r
-        events = []
-        for r in RANK_ORDER:
-            v = promos.get(r, "")
-            try:
-                d = pd.to_datetime(v, format='%d-%b-%Y')
-            except (ValueError, TypeError):
-                continue
-            if as_on < d <= ret_date and idx[r] > idx.get(start_rank, -1):
-                events.append((d, r))
-        events.sort()
-
-        seg_start, rank_now = as_on, start_rank
-        for d, r in events:
-            if d > seg_start:
-                rows.append({'Scenario': scen, 'Rank': rank_now,
-                             'Start': seg_start, 'End': d})
-            seg_start, rank_now = d, r
-        if ret_date > seg_start:
-            rows.append({'Scenario': scen, 'Rank': rank_now,
-                         'Start': seg_start, 'End': ret_date})
-    return pd.DataFrame(rows)
-
-
-def timeline_chart(tl, as_on):
-    ranks_present = [r for r in ['AC'] + RANK_ORDER if r in tl['Rank'].unique()]
-    extras = [r for r in tl['Rank'].unique() if r not in ranks_present]
-    domain = ranks_present + extras
-    colors = [RANK_COLORS.get(r, '#666666') for r in domain]
-
-    bars = alt.Chart(tl).mark_bar(cornerRadius=7, height=20).encode(
-        x=alt.X('Start:T', title=None, axis=alt.Axis(format='%Y', grid=True)),
-        x2='End:T',
-        y=alt.Y('Scenario:N', sort=SCENARIO_ORDER, title=None),
-        color=alt.Color('Rank:N', scale=alt.Scale(domain=domain, range=colors),
-                        sort=domain, legend=alt.Legend(title='Rank held',
-                                                       orient='bottom')),
-        tooltip=[alt.Tooltip('Scenario:N'), alt.Tooltip('Rank:N'),
-                 alt.Tooltip('Start:T', format='%b %Y', title='From'),
-                 alt.Tooltip('End:T', format='%b %Y', title='To')])
-
-    today_df = pd.DataFrame({'d': [as_on], 'label': ['As-on date']})
-    rule = alt.Chart(today_df).mark_rule(color='#C9A227', strokeWidth=2,
-                                         strokeDash=[6, 4]).encode(x='d:T')
-
-    promo_pts = tl[tl['Start'] > as_on]
-    points = alt.Chart(promo_pts).mark_point(shape='diamond', size=110,
-                                             filled=True, color='#C9A227',
-                                             stroke='#0F3057').encode(
-        x='Start:T', y=alt.Y('Scenario:N', sort=SCENARIO_ORDER),
-        tooltip=[alt.Tooltip('Rank:N', title='Promoted to'),
-                 alt.Tooltip('Start:T', format='%b %Y', title='When'),
-                 alt.Tooltip('Scenario:N')])
-
-    return (bars + rule + points).properties(height=230).configure_view(stroke=None)
-
-
 # ----------------------------- REPORT ----------------------------------------
-def build_html_report(target, live_rank, verdict_html, scenarios, tracker,
+def build_html_report(target, verdict_html, scenarios, tracker,
                       as_on, vrs_annual, calib_rows):
     proj = pd.DataFrame(scenarios).reindex(RANK_ORDER)
     rows_html = ""
@@ -450,7 +378,6 @@ padding-top:10px;margin-top:24px;}}
 <tr><th>Name</th><td>{target['Name']}</td><th>IRLA No</th><td>{target['IRLA No']}</td></tr>
 <tr><th>Present Rank</th><td>{target['Rank']}</td><th>Seniority S.No</th><td>{int(target['S. No'])}</td></tr>
 <tr><th>Date of Birth</th><td>{target['DOB'].strftime('%d-%b-%Y')}</td><th>Superannuation</th><td>{target['Retirement_Date'].strftime('%d-%b-%Y')}</td></tr>
-<tr><th>Live Seniority</th><td colspan='3'>#{live_rank} among serving officers (as on {as_on.strftime('%d-%b-%Y')})</td></tr>
 </table>
 
 <div class='verdict'><b>📋 Verdict:</b> {verdict_html}</div>
@@ -474,7 +401,7 @@ planning only.</p>
 </body></html>"""
 
 
-def build_text_report(target, live_rank, verdict_plain, scenarios, as_on):
+def build_text_report(target, verdict_plain, scenarios, as_on):
     lines = ["BSF OFFICERS PROMOTION PROJECTION",
              f"Generated {pd.Timestamp.today().strftime('%d-%b-%Y')} | As on {as_on.strftime('%d-%b-%Y')}",
              "-" * 46,
@@ -482,7 +409,6 @@ def build_text_report(target, live_rank, verdict_plain, scenarios, as_on):
              f"Rank/S.No : {target['Rank']} / {int(target['S. No'])}",
              f"DOB       : {target['DOB'].strftime('%d-%b-%Y')}",
              f"Retirement: {target['Retirement_Date'].strftime('%d-%b-%Y')}",
-             f"Live seniority: #{live_rank}",
              "-" * 46,
              f"VERDICT: {verdict_plain}",
              "-" * 46, "PROJECTIONS:"]
@@ -535,27 +461,17 @@ if irla:
           <h2>{target['Name']}</h2>
         </div>""", unsafe_allow_html=True)
 
-        c1, c2, c3, c4, c5 = st.columns(5)
+        c1, c2, c3, c4 = st.columns(4)
         c1.metric("S.No", int(target['S. No']))
-        c2.metric("Live Seniority", f"#{live_rank}",
-                  help="Position among officers still serving as on the selected date.")
-        c3.metric("DOB", target['DOB'].strftime('%d-%b-%Y'))
-        c4.metric("Retirement", target['Retirement_Date'].strftime('%d-%b-%Y'))
+        c2.metric("DOB", target['DOB'].strftime('%d-%b-%Y'))
+        c3.metric("Retirement", target['Retirement_Date'].strftime('%d-%b-%Y'))
         yrs_left = max(0.0, (target['Retirement_Date'] - as_on).days / 365.25)
-        c5.metric("Service Left", f"{yrs_left:.1f} yrs")
+        c4.metric("Service Left", f"{yrs_left:.1f} yrs")
 
         # ---- Verdict ----
         verdict_html = make_verdict(scenarios, current_code)
         st.markdown(f"<div class='verdict-card'>📋 <b>Verdict:</b> {verdict_html}</div>",
                     unsafe_allow_html=True)
-
-        # ---- Career timeline ----
-        st.subheader("🗓️ Career Timeline — Four Scenarios")
-        tl = build_timeline(scenarios, current_code, as_on, target['Retirement_Date'])
-        if not tl.empty:
-            st.altair_chart(timeline_chart(tl, as_on), use_container_width=True)
-            st.caption("◆ Gold diamonds mark projected promotion dates. "
-                       "Bar colour = rank held during that period. Hover for details.")
 
         # ---- Projections table ----
         st.subheader("📈 Promotion Projections")
@@ -591,9 +507,9 @@ if irla:
         st.divider()
         st.subheader("⬇️ Download One-Page Report")
         verdict_plain = (verdict_html.replace('<b>', '').replace('</b>', ''))
-        html_report = build_html_report(target, live_rank, verdict_html, scenarios,
+        html_report = build_html_report(target, verdict_html, scenarios,
                                         tracker, as_on, vrs_annual, calib_rows)
-        text_report = build_text_report(target, live_rank, verdict_plain, scenarios, as_on)
+        text_report = build_text_report(target, verdict_plain, scenarios, as_on)
 
         d1, d2 = st.columns(2)
         d1.download_button("📄 Full Report (HTML — open & print/save as PDF)",
