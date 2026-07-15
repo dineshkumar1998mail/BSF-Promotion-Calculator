@@ -32,6 +32,10 @@ SCENARIO_ORDER = ['Normal', 'VRS (No CR)', 'With CR', 'CR + VRS']
 # ----------------------------- STYLING --------------------------------------
 st.markdown("""
 <style>
+/* Light grey app background */
+.stApp {background-color: #E9EDF2;}
+[data-testid="stSidebar"] {background-color: #DFE5EC;}
+[data-testid="stHeader"] {background-color: #E9EDF2;}
 .block-container {padding-top: 1.2rem;}
 .bsf-header {
     background: linear-gradient(100deg, #0F3057 0%, #1F4E79 55%, #0B7285 100%);
@@ -44,7 +48,7 @@ st.markdown("""
 .bsf-header h1 {color:#FFFFFF; font-size:1.9rem; margin:0 0 .25rem 0;}
 .bsf-header p {color:#D7E3F4; margin:0; font-size:.95rem;}
 .verdict-card {
-    background: #F4F8FC;
+    background: #FFFFFF;
     border-left: 6px solid #C9A227;
     border-radius: 10px;
     padding: 1rem 1.3rem;
@@ -62,7 +66,7 @@ st.markdown("""
     letter-spacing: .05em;}
 [data-testid="stMetric"] {
     background: #FFFFFF;
-    border: 1px solid #E3EAF3;
+    border: 1px solid #D3DBE5;
     border-left: 4px solid #0B7285;
     border-radius: 10px;
     padding: .7rem .9rem;
