@@ -430,12 +430,6 @@ st.markdown(f"""
   Promotion lines auto-calibrated from latest promotion orders</p>
 </div>""", unsafe_allow_html=True)
 
-if calib_rows:
-    with st.expander("🔧 Current calibration (dynamic promotion lines)"):
-        st.table(pd.DataFrame(calib_rows).set_index('Rank'))
-        st.caption("Live promotion line = current seniority position of the junior-most "
-                   "officer already promoted to that rank. CR lines shift by the same amount.")
-
 irla = st.text_input("Enter IRLA Number:")
 
 if irla:
