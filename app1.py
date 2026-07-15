@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 from pandas.tseries.offsets import MonthEnd
 
-st.set_page_config(page_title="BSF Officers Promotion Model", layout="wide", page_icon="🛡️")
+st.set_page_config(page_title="BSF Officers Promotion Model", layout="centered", page_icon="🛡️")
 
 # ----------------------------- CONSTANTS -----------------------------------
 RANK_ORDER = ['DC', '2IC', 'COMDT', 'DIG', 'IG', 'ADG']
@@ -70,6 +70,24 @@ st.markdown("""
 }
 [data-testid="stMetricLabel"] {color:#5A7184;}
 h3 {color:#0F3057;}
+
+/* ---------- Mobile ---------- */
+@media (max-width: 640px) {
+  .block-container {padding-left: .8rem; padding-right: .8rem;}
+  .bsf-header {padding: .9rem 1.1rem; border-radius: 10px;}
+  .bsf-header h1 {font-size: 1.25rem;}
+  .bsf-header p {font-size: .78rem;}
+  .officer-card {padding: .7rem 1rem;}
+  .officer-card h2 {font-size: 1.15rem;}
+  .verdict-card {font-size: .95rem; padding: .8rem 1rem;}
+  [data-testid="stMetric"] {padding: .5rem .6rem;}
+  [data-testid="stMetricValue"] {font-size: 1.05rem !important;}
+  [data-testid="stMetricLabel"] {font-size: .72rem !important;}
+  /* keep columns 2-up on phones instead of one long stack */
+  [data-testid="stHorizontalBlock"] {flex-wrap: wrap; gap: .6rem;}
+  [data-testid="stHorizontalBlock"] > div {flex: 1 1 45% !important; min-width: 45% !important;}
+  h3 {font-size: 1.05rem;}
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -430,12 +448,6 @@ st.markdown(f"""
   Promotion lines auto-calibrated from latest promotion orders</p>
 </div>""", unsafe_allow_html=True)
 
-if calib_rows:
-    with st.expander("🔧 Current calibration (dynamic promotion lines)"):
-        st.table(pd.DataFrame(calib_rows).set_index('Rank'))
-        st.caption("Live promotion line = current seniority position of the junior-most "
-                   "officer already promoted to that rank. CR lines shift by the same amount.")
-
 irla = st.text_input("Enter IRLA Number:")
 
 if irla:
@@ -484,9 +496,17 @@ if irla:
                 return 'color:#9AA5B1;font-style:italic'
             return 'color:#0F3057;font-weight:600'
 
-        styler = proj.style
-        styler = styler.map(cell_style) if hasattr(styler, 'map') else styler.applymap(cell_style)
-        st.dataframe(styler, use_container_width=True)
+        def styled(frame):
+            s = frame.style
+            return s.map(cell_style) if hasattr(s, 'map') else s.applymap(cell_style)
+
+        tabs = st.tabs(SCENARIO_ORDER + ['🔀 Compare All'])
+        for tab, s_name in zip(tabs[:-1], SCENARIO_ORDER):
+            with tab:
+                one = proj[[s_name]].rename(columns={s_name: 'Projection'})
+                st.dataframe(styled(one), use_container_width=True)
+        with tabs[-1]:
+            st.dataframe(styled(proj), use_container_width=True)
 
         c_a, c_b = st.columns(2)
         c_a.metric("Final Seniority (Normal Model)", f"Rank #{max(1, int(f_norm))}",
