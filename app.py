@@ -32,40 +32,68 @@ SCENARIO_ORDER = ['Normal', 'VRS (No CR)', 'With CR', 'CR + VRS']
 # ----------------------------- STYLING --------------------------------------
 st.markdown("""
 <style>
+/* ---- Parchment / olive / brass palette ---- */
+.stApp {background-color: #F5F3EC; color: #232821;}
+[data-testid="stSidebar"] {background-color: #EDEAE0; border-right: 1px solid #D8D3C2;}
+[data-testid="stHeader"] {background: transparent;}
+p, li, label, .stMarkdown {color: #232821;}
+.stCaption, [data-testid="stCaptionContainer"] {color: #6E6F5E !important;}
 .block-container {padding-top: 1.5rem;}
+
+h1, h2 {color: #2E3618;}
+h3 {color: #2E3618; border-bottom: 1px solid #D8D3C2; padding-bottom: .3rem;}
+
 .verdict-card {
-    background: #F0F7FF;
-    border-left: 4px solid #3B82F6;
+    background: #FDFCF8;
+    border: 1px solid #D8D3C2;
+    border-left: 4px solid #A6802A;
     border-radius: 8px;
     padding: 1rem 1.2rem;
     margin: .5rem 0 1rem;
     font-size: 1.02rem;
+    color: #232821;
 }
+.verdict-card b {color: #2E3618;}
+
 [data-testid="stMetric"] {
-    background: #FFFFFF;
-    border: 1px solid #E5E7EB;
-    border-radius: 10px;
+    background: #FDFCF8;
+    border: 1px solid #D8D3C2;
+    border-top: 3px solid #A6802A;
+    border-radius: 8px;
     padding: .7rem .9rem;
+    box-shadow: 0 1px 3px rgba(35,40,33,.07);
 }
+[data-testid="stMetricLabel"] {color: #5C6150;}
+[data-testid="stMetricValue"] {color: #232821;}
+
 /* Prominent IRLA search box (main page only) */
 [data-testid="stTextInput"] input {
     font-size: 1.2rem;
     padding: .8rem 1rem;
-    border: 2px solid #3B82F6;
+    border: 2px solid #39431F;
     border-radius: 10px;
     background: #FFFFFF;
+    color: #232821;
 }
 [data-testid="stTextInput"] input:focus {
-    border-color: #1D4ED8;
-    box-shadow: 0 0 0 3px rgba(59,130,246,.25);
+    border-color: #A6802A;
+    box-shadow: 0 0 0 3px rgba(166,128,42,.25);
 }
 /* keep sidebar inputs at normal size */
 [data-testid="stSidebar"] [data-testid="stTextInput"] input {
     font-size: 1rem;
     padding: .45rem .6rem;
-    border: 1px solid #D1D5DB;
+    border: 1px solid #C9C3B2;
     border-radius: 8px;
     box-shadow: none;
+}
+
+[data-testid="stDownloadButton"] button {
+    background: #39431F; color: #FBFAF3;
+    border: 1px solid #2E3618; border-radius: 8px;
+}
+[data-testid="stDownloadButton"] button:hover {
+    background: #4A5729; color: #FFFFFF; border-color: #A6802A;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -350,22 +378,26 @@ def build_html_report(target, verdict_html, scenarios, tracker,
     return f"""<!DOCTYPE html><html><head><meta charset='utf-8'>
 <title>Promotion Projection — {target['Name']}</title>
 <style>
-body{{font-family:Arial,Helvetica,sans-serif;color:#1F2937;max-width:820px;
-margin:24px auto;padding:0 20px;background:#FFFFFF;}}
-.header{{border-bottom:3px solid #3B82F6;padding-bottom:10px;margin-bottom:6px;}}
-.header h1{{margin:0 0 4px;font-size:22px;color:#111827;}}
-.header p{{margin:0;color:#6B7280;font-size:12px;}}
-.verdict{{background:#F0F7FF;border-left:4px solid #3B82F6;border-radius:6px;
-padding:12px 16px;margin:16px 0;font-size:15px;}}
-table{{border-collapse:collapse;width:100%;margin:10px 0 18px;font-size:13px;}}
-th,td{{border:1px solid #E5E7EB;padding:7px 10px;text-align:center;}}
-th{{background:#F3F4F6;color:#111827;font-weight:600;}}
-td.ok{{background:#E7F6EC;color:#166534;font-weight:600;}}
-td.na{{color:#6B7280;font-style:italic;}}
-td.dt{{color:#111827;font-weight:600;}}
-h3{{color:#111827;border-bottom:1px solid #E5E7EB;padding-bottom:4px;}}
-.small{{font-size:12px;color:#6B7280;}}
-.disclaimer{{font-size:11px;color:#9CA3AF;border-top:1px solid #E5E7EB;
+body{{font-family:Arial,Helvetica,sans-serif;color:#232821;max-width:820px;
+margin:24px auto;padding:0 20px;background:#F5F3EC;}}
+.header{{background:#FDFCF8;border-top:4px double #A6802A;border-bottom:4px double #A6802A;
+border-left:1px solid #D8D3C2;border-right:1px solid #D8D3C2;text-align:center;
+padding:16px 24px;}}
+.header h1{{margin:0 0 4px;font-size:22px;color:#2E3618;}}
+.header p{{margin:0;color:#5C6150;font-size:12px;}}
+.verdict{{background:#FDFCF8;border:1px solid #D8D3C2;border-left:5px solid #A6802A;
+border-radius:6px;padding:12px 16px;margin:16px 0;font-size:15px;}}
+table{{border-collapse:collapse;width:100%;margin:10px 0 18px;font-size:13px;
+background:#FDFCF8;}}
+th,td{{border:1px solid #D8D3C2;padding:7px 10px;text-align:center;}}
+th{{background:#39431F;color:#FBFAF3;font-weight:600;}}
+tr th:first-child{{background:#4A5729;}}
+td.ok{{background:#EAF0E2;color:#33531F;font-weight:600;}}
+td.na{{color:#77785F;font-style:italic;}}
+td.dt{{color:#39431F;font-weight:600;}}
+h3{{color:#2E3618;border-bottom:2px solid #A6802A;padding-bottom:4px;}}
+.small{{font-size:12px;color:#5C6150;}}
+.disclaimer{{font-size:11px;color:#8A8B7A;border-top:1px solid #D8D3C2;
 padding-top:10px;margin-top:24px;}}
 </style></head><body>
 <div class='header'><h1>BSF Officers Promotion Projection</h1>
@@ -469,10 +501,10 @@ if irla:
 
         def cell_style(v):
             if v == "Already Achieved":
-                return 'background-color:#E7F6EC;color:#166534;font-weight:600'
+                return 'background-color:#EAF0E2;color:#33531F;font-weight:600'
             if v == "Will not achieve":
-                return 'color:#6B7280;font-style:italic'
-            return 'color:#111827;font-weight:600'
+                return 'color:#77785F;font-style:italic'
+            return 'color:#39431F;font-weight:600'
 
         styler = proj.style
         styler = styler.map(cell_style) if hasattr(styler, 'map') else styler.applymap(cell_style)
