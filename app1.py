@@ -32,50 +32,83 @@ SCENARIO_ORDER = ['Normal', 'VRS (No CR)', 'With CR', 'CR + VRS']
 # ----------------------------- STYLING --------------------------------------
 st.markdown("""
 <style>
-/* Readability-first theme: soft off-white background, near-black text */
-.stApp {background-color: #F7F8FA; color: #1A2733;}
-[data-testid="stSidebar"] {background-color: #EEF1F5;}
-[data-testid="stHeader"] {background-color: #F7F8FA;}
-p, li, label, .stMarkdown {color: #1A2733;}
-.stCaption, [data-testid="stCaptionContainer"] {color: #4A5A6B !important;}
+@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap');
+
+/* ---- Service-dossier palette: parchment paper, olive ink, brass accents ---- */
+.stApp {background-color: #F5F3EC; color: #232821;}
+[data-testid="stSidebar"] {background-color: #EDEAE0; border-right: 1px solid #D8D3C2;}
+[data-testid="stHeader"] {background: transparent;}
+p, li, label, .stMarkdown {color: #232821;}
+.stCaption, [data-testid="stCaptionContainer"] {color: #6E6F5E !important;}
 .block-container {padding-top: 1.2rem;}
+
+h3 {font-family: 'Source Serif 4', Georgia, serif; color: #2E3618;
+    border-bottom: 1px solid #D8D3C2; padding-bottom: .3rem; font-weight: 600;}
+
 .bsf-header {
-    background: linear-gradient(100deg, #0F3057 0%, #1F4E79 55%, #0B7285 100%);
-    border-bottom: 4px solid #C9A227;
-    border-radius: 14px;
-    padding: 1.4rem 1.8rem;
-    margin-bottom: 1.2rem;
-    color: #FFFFFF;
+    background: #FDFCF8;
+    border-top: 4px double #A6802A;
+    border-bottom: 4px double #A6802A;
+    border-left: 1px solid #D8D3C2;
+    border-right: 1px solid #D8D3C2;
+    text-align: center;
+    padding: 1.5rem 2rem 1.2rem;
+    margin-bottom: 1.4rem;
 }
-.bsf-header h1 {color:#FFFFFF; font-size:1.9rem; margin:0 0 .25rem 0;}
-.bsf-header p {color:#D7E3F4; margin:0; font-size:.95rem;}
-.verdict-card {
-    background: #FFFFFF;
-    border-left: 6px solid #C9A227;
-    border-radius: 10px;
-    padding: 1rem 1.3rem;
-    margin: .4rem 0 1rem 0;
-    font-size: 1.05rem;
-    color: #0F3057;
-}
+.bsf-header .motto {color: #A6802A; font-size: .78rem; letter-spacing: .28em;
+    text-transform: uppercase; margin-bottom: .4rem;}
+.bsf-header h1 {font-family: 'Source Serif 4', Georgia, serif; color: #2E3618;
+    font-size: 2rem; margin: 0 0 .35rem; font-weight: 700;}
+.bsf-header .stars {color: #A6802A; letter-spacing: .7em; font-size: .8rem;
+    margin-bottom: .45rem;}
+.bsf-header .sub {color: #5C6150; margin: 0; font-size: .9rem;}
+
 .officer-card {
-    background: linear-gradient(100deg, #0F3057, #1F4E79);
-    color: white; border-radius: 12px;
-    padding: .9rem 1.4rem; margin-bottom: .8rem;
+    background: #39431F;
+    border-left: 6px solid #A6802A;
+    border-radius: 4px;
+    padding: .95rem 1.4rem;
+    margin-bottom: .9rem;
 }
-.officer-card h2 {color: #FFFFFF; margin: 0; font-size: 1.4rem;}
-.officer-card span {color: #C9A227; font-weight: 600; font-size: .9rem;
-    letter-spacing: .05em;}
+.officer-card span {color: #D9B75B; font-weight: 600; font-size: .72rem;
+    letter-spacing: .26em; text-transform: uppercase;}
+.officer-card h2 {color: #FBFAF3; margin: .15rem 0 0; font-size: 1.5rem;
+    font-family: 'Source Serif 4', Georgia, serif;}
+
+.verdict-card {
+    background: #FDFCF8;
+    border: 1px solid #D8D3C2;
+    border-left: 5px solid #39431F;
+    border-radius: 4px;
+    padding: 1rem 1.3rem;
+    margin: .4rem 0 1.2rem;
+    font-size: 1.03rem;
+    color: #232821;
+}
+.verdict-card .v-label {color: #A6802A; font-size: .7rem; letter-spacing: .26em;
+    text-transform: uppercase; font-weight: 700; margin-bottom: .35rem;}
+.verdict-card b {color: #2E3618;}
+
 [data-testid="stMetric"] {
-    background: #FFFFFF;
-    border: 1px solid #D3DBE5;
-    border-left: 4px solid #0B7285;
-    border-radius: 10px;
+    background: #FDFCF8;
+    border: 1px solid #D8D3C2;
+    border-top: 3px solid #A6802A;
+    border-radius: 4px;
     padding: .7rem .9rem;
-    box-shadow: 0 1px 4px rgba(15,48,87,.08);
+    box-shadow: 0 1px 3px rgba(35,40,33,.07);
 }
-[data-testid="stMetricLabel"] {color:#44556A;}
-h3 {color:#0F3057;}
+[data-testid="stMetricLabel"] {color: #5C6150; text-transform: uppercase;
+    letter-spacing: .06em;}
+[data-testid="stMetricValue"] {color: #232821;
+    font-family: 'Source Serif 4', Georgia, serif;}
+
+[data-testid="stDownloadButton"] button {
+    background: #39431F; color: #FBFAF3;
+    border: 1px solid #2E3618; border-radius: 4px;
+}
+[data-testid="stDownloadButton"] button:hover {
+    background: #4A5729; color: #FFFFFF; border-color: #A6802A;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -155,7 +188,7 @@ def live_position(df, sno, as_on):
 
 
 # ----------------------------- SIDEBAR (CALIBRATION) ------------------------
-st.sidebar.header("⚙️ Model Calibration")
+st.sidebar.header("Model Calibration")
 
 uploaded = st.sidebar.file_uploader(
     "Updated gradation list (optional CSV)", type=['csv'],
@@ -167,7 +200,7 @@ as_on = pd.Timestamp(st.sidebar.date_input(
     "Calculations as-on date", value=pd.Timestamp.today().normalize(),
     help="All seniority positions and simulations start from this date."))
 
-st.sidebar.subheader("📌 Latest Promotion Anchors")
+st.sidebar.subheader("Latest Promotion Anchors")
 st.sidebar.caption(
     "After a new DPC/promotion order, enter the IRLA of the **junior-most officer "
     "promoted** to that rank — thresholds recalibrate automatically. Sidebar entries "
@@ -359,26 +392,31 @@ def build_html_report(target, verdict_html, scenarios, tracker,
     return f"""<!DOCTYPE html><html><head><meta charset='utf-8'>
 <title>Promotion Projection — {target['Name']}</title>
 <style>
-body{{font-family:Georgia,'Times New Roman',serif;color:#1a2733;max-width:820px;
-margin:24px auto;padding:0 20px;}}
-.header{{background:linear-gradient(100deg,#0F3057,#1F4E79 60%,#0B7285);color:#fff;
-border-bottom:4px solid #C9A227;border-radius:10px;padding:18px 24px;}}
-.header h1{{margin:0;font-size:22px;}} .header p{{margin:4px 0 0;color:#D7E3F4;font-size:13px;}}
-.verdict{{background:#F4F8FC;border-left:5px solid #C9A227;padding:12px 16px;
-border-radius:8px;margin:16px 0;font-size:15px;}}
-table{{border-collapse:collapse;width:100%;margin:10px 0 18px;font-size:13px;}}
-th,td{{border:1px solid #D5DEE9;padding:7px 10px;text-align:center;}}
-th{{background:#0F3057;color:#fff;font-weight:600;}}
-tr th:first-child{{background:#1F4E79;}}
-td.ok{{background:#E8F5E9;color:#1B5E20;font-weight:600;}}
-td.na{{color:#66788C;font-style:italic;}}
-td.dt{{color:#0F3057;font-weight:600;}}
-h3{{color:#0F3057;border-bottom:2px solid #C9A227;padding-bottom:4px;}}
-.small{{font-size:12px;color:#44556A;}}
-.disclaimer{{font-size:11px;color:#8896A6;border-top:1px solid #D5DEE9;
+body{{font-family:Georgia,'Times New Roman',serif;color:#232821;max-width:820px;
+margin:24px auto;padding:0 20px;background:#F5F3EC;}}
+.header{{background:#FDFCF8;border-top:4px double #A6802A;border-bottom:4px double #A6802A;
+border-left:1px solid #D8D3C2;border-right:1px solid #D8D3C2;text-align:center;
+padding:18px 24px 14px;}}
+.header .motto{{color:#A6802A;font-size:11px;letter-spacing:.28em;text-transform:uppercase;}}
+.header h1{{margin:6px 0 3px;font-size:22px;color:#2E3618;}}
+.header p{{margin:0;color:#5C6150;font-size:12px;}}
+.verdict{{background:#FDFCF8;border:1px solid #D8D3C2;border-left:5px solid #39431F;
+padding:12px 16px;margin:16px 0;font-size:15px;}}
+table{{border-collapse:collapse;width:100%;margin:10px 0 18px;font-size:13px;
+background:#FDFCF8;}}
+th,td{{border:1px solid #D8D3C2;padding:7px 10px;text-align:center;}}
+th{{background:#39431F;color:#FBFAF3;font-weight:600;}}
+tr th:first-child{{background:#4A5729;}}
+td.ok{{background:#EAF0E2;color:#33531F;font-weight:600;}}
+td.na{{color:#77785F;font-style:italic;}}
+td.dt{{color:#39431F;font-weight:600;}}
+h3{{color:#2E3618;border-bottom:2px solid #A6802A;padding-bottom:4px;}}
+.small{{font-size:12px;color:#5C6150;}}
+.disclaimer{{font-size:11px;color:#8A8B7A;border-top:1px solid #D8D3C2;
 padding-top:10px;margin-top:24px;}}
 </style></head><body>
-<div class='header'><h1>🛡️ BSF Officers Promotion Projection</h1>
+<div class='header'><div class='motto'>जीवन पर्यन्त कर्तव्य &nbsp;·&nbsp; Duty Unto Death</div>
+<h1>BSF Officers Promotion Projection</h1>
 <p>Generated {pd.Timestamp.today().strftime('%d-%b-%Y')} &nbsp;|&nbsp; Computed as on {as_on.strftime('%d-%b-%Y')}</p></div>
 
 <h3>Officer Details</h3>
@@ -388,7 +426,7 @@ padding-top:10px;margin-top:24px;}}
 <tr><th>Date of Birth</th><td>{target['DOB'].strftime('%d-%b-%Y')}</td><th>Superannuation</th><td>{target['Retirement_Date'].strftime('%d-%b-%Y')}</td></tr>
 </table>
 
-<div class='verdict'><b>📋 Verdict:</b> {verdict_html}</div>
+<div class='verdict'><b>Assessment:</b> {verdict_html}</div>
 
 <h3>Promotion Projections</h3>
 <table><tr><th>Rank</th>{''.join(f'<th>{s}</th>' for s in SCENARIO_ORDER)}</tr>{rows_html}</table>
@@ -434,9 +472,11 @@ def build_text_report(target, verdict_plain, scenarios, as_on):
 # ----------------------------- UI -------------------------------------------
 st.markdown(f"""
 <div class="bsf-header">
-  <h1>🛡️ BSF Officers Promotion Model</h1>
-  <p>Seniority-based projection • Computed live as on <b>{as_on.strftime('%d-%b-%Y')}</b> •
-  Promotion lines auto-calibrated from latest promotion orders</p>
+  <div class="motto">जीवन पर्यन्त कर्तव्य &nbsp;·&nbsp; Duty Unto Death</div>
+  <h1>BSF Officers Promotion Model</h1>
+  <div class="stars">★ ★ ★</div>
+  <p class="sub">Seniority-based projection &nbsp;·&nbsp; computed as on
+  <b>{as_on.strftime('%d-%b-%Y')}</b> &nbsp;·&nbsp; calibrated to the latest promotion orders</p>
 </div>""", unsafe_allow_html=True)
 
 irla = st.text_input("Enter IRLA Number:")
@@ -473,19 +513,19 @@ if irla:
 
         # ---- Verdict ----
         verdict_html = make_verdict(scenarios, current_code)
-        st.markdown(f"<div class='verdict-card'>📋 <b>Verdict:</b> {verdict_html}</div>",
-                    unsafe_allow_html=True)
+        st.markdown(f"<div class='verdict-card'><div class='v-label'>Assessment</div>"
+                    f"{verdict_html}</div>", unsafe_allow_html=True)
 
         # ---- Projections table ----
-        st.subheader("📈 Promotion Projections")
+        st.subheader("Promotion Projections")
         proj = pd.DataFrame(scenarios).reindex(RANK_ORDER)[SCENARIO_ORDER]
 
         def cell_style(v):
             if v == "Already Achieved":
-                return 'background-color:#E8F5E9;color:#1B5E20;font-weight:600'
+                return 'background-color:#EAF0E2;color:#33531F;font-weight:600'
             if v == "Will not achieve":
-                return 'color:#66788C;font-style:italic'
-            return 'color:#0F3057;font-weight:600'
+                return 'color:#77785F;font-style:italic'
+            return 'color:#39431F;font-weight:600'
 
         styler = proj.style
         styler = styler.map(cell_style) if hasattr(styler, 'map') else styler.applymap(cell_style)
@@ -498,7 +538,7 @@ if irla:
                    help="VRS applied as a % of serving seniors; no double-counting.")
 
         # ---- Tracker ----
-        st.subheader("📅 Seniority Tracker (1 Jan each year — Normal Model)")
+        st.subheader("Seniority Tracker (1 Jan each year — Normal Model)")
         if tracker:
             st.dataframe(pd.DataFrame(list(tracker.items()),
                                       columns=['Year', 'Seniority Pos'])
@@ -508,18 +548,18 @@ if irla:
 
         # ---- Downloadable report ----
         st.divider()
-        st.subheader("⬇️ Download One-Page Report")
+        st.subheader("Download One-Page Report")
         verdict_plain = (verdict_html.replace('<b>', '').replace('</b>', ''))
         html_report = build_html_report(target, verdict_html, scenarios,
                                         tracker, as_on, vrs_rate, calib_rows)
         text_report = build_text_report(target, verdict_plain, scenarios, as_on)
 
         d1, d2 = st.columns(2)
-        d1.download_button("📄 Full Report (HTML — open & print/save as PDF)",
+        d1.download_button("Full Report (HTML — open & print/save as PDF)",
                            data=html_report,
                            file_name=f"promotion_projection_{target['IRLA No']}.html",
                            mime="text/html", use_container_width=True)
-        d2.download_button("💬 Text Summary (WhatsApp-friendly)",
+        d2.download_button("Text Summary (WhatsApp-friendly)",
                            data=text_report,
                            file_name=f"promotion_summary_{target['IRLA No']}.txt",
                            mime="text/plain", use_container_width=True)
