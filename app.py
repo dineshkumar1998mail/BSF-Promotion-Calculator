@@ -32,82 +32,40 @@ SCENARIO_ORDER = ['Normal', 'VRS (No CR)', 'With CR', 'CR + VRS']
 # ----------------------------- STYLING --------------------------------------
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap');
-
-/* ---- Service-dossier palette: parchment paper, olive ink, brass accents ---- */
-.stApp {background-color: #F5F3EC; color: #232821;}
-[data-testid="stSidebar"] {background-color: #EDEAE0; border-right: 1px solid #D8D3C2;}
-[data-testid="stHeader"] {background: transparent;}
-p, li, label, .stMarkdown {color: #232821;}
-.stCaption, [data-testid="stCaptionContainer"] {color: #6E6F5E !important;}
-.block-container {padding-top: 1.2rem;}
-
-h3 {font-family: 'Source Serif 4', Georgia, serif; color: #2E3618;
-    border-bottom: 1px solid #D8D3C2; padding-bottom: .3rem; font-weight: 600;}
-
-.bsf-header {
-    background: #FDFCF8;
-    border-top: 4px double #A6802A;
-    border-bottom: 4px double #A6802A;
-    border-left: 1px solid #D8D3C2;
-    border-right: 1px solid #D8D3C2;
-    text-align: center;
-    padding: 1.5rem 2rem 1.2rem;
-    margin-bottom: 1.4rem;
-}
-.bsf-header .motto {color: #A6802A; font-size: .78rem; letter-spacing: .28em;
-    text-transform: uppercase; margin-bottom: .4rem;}
-.bsf-header h1 {font-family: 'Source Serif 4', Georgia, serif; color: #2E3618;
-    font-size: 2rem; margin: 0 0 .35rem; font-weight: 700;}
-.bsf-header .stars {color: #A6802A; letter-spacing: .7em; font-size: .8rem;
-    margin-bottom: .45rem;}
-.bsf-header .sub {color: #5C6150; margin: 0; font-size: .9rem;}
-
-.officer-card {
-    background: #39431F;
-    border-left: 6px solid #A6802A;
-    border-radius: 4px;
-    padding: .95rem 1.4rem;
-    margin-bottom: .9rem;
-}
-.officer-card span {color: #D9B75B; font-weight: 600; font-size: .72rem;
-    letter-spacing: .26em; text-transform: uppercase;}
-.officer-card h2 {color: #FBFAF3; margin: .15rem 0 0; font-size: 1.5rem;
-    font-family: 'Source Serif 4', Georgia, serif;}
-
+.block-container {padding-top: 1.5rem;}
 .verdict-card {
-    background: #FDFCF8;
-    border: 1px solid #D8D3C2;
-    border-left: 5px solid #39431F;
-    border-radius: 4px;
-    padding: 1rem 1.3rem;
-    margin: .4rem 0 1.2rem;
-    font-size: 1.03rem;
-    color: #232821;
+    background: #F0F7FF;
+    border-left: 4px solid #3B82F6;
+    border-radius: 8px;
+    padding: 1rem 1.2rem;
+    margin: .5rem 0 1rem;
+    font-size: 1.02rem;
 }
-.verdict-card .v-label {color: #A6802A; font-size: .7rem; letter-spacing: .26em;
-    text-transform: uppercase; font-weight: 700; margin-bottom: .35rem;}
-.verdict-card b {color: #2E3618;}
-
 [data-testid="stMetric"] {
-    background: #FDFCF8;
-    border: 1px solid #D8D3C2;
-    border-top: 3px solid #A6802A;
-    border-radius: 4px;
+    background: #FFFFFF;
+    border: 1px solid #E5E7EB;
+    border-radius: 10px;
     padding: .7rem .9rem;
-    box-shadow: 0 1px 3px rgba(35,40,33,.07);
 }
-[data-testid="stMetricLabel"] {color: #5C6150; text-transform: uppercase;
-    letter-spacing: .06em;}
-[data-testid="stMetricValue"] {color: #232821;
-    font-family: 'Source Serif 4', Georgia, serif;}
-
-[data-testid="stDownloadButton"] button {
-    background: #39431F; color: #FBFAF3;
-    border: 1px solid #2E3618; border-radius: 4px;
+/* Prominent IRLA search box (main page only) */
+[data-testid="stTextInput"] input {
+    font-size: 1.2rem;
+    padding: .8rem 1rem;
+    border: 2px solid #3B82F6;
+    border-radius: 10px;
+    background: #FFFFFF;
 }
-[data-testid="stDownloadButton"] button:hover {
-    background: #4A5729; color: #FFFFFF; border-color: #A6802A;
+[data-testid="stTextInput"] input:focus {
+    border-color: #1D4ED8;
+    box-shadow: 0 0 0 3px rgba(59,130,246,.25);
+}
+/* keep sidebar inputs at normal size */
+[data-testid="stSidebar"] [data-testid="stTextInput"] input {
+    font-size: 1rem;
+    padding: .45rem .6rem;
+    border: 1px solid #D1D5DB;
+    border-radius: 8px;
+    box-shadow: none;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -392,31 +350,25 @@ def build_html_report(target, verdict_html, scenarios, tracker,
     return f"""<!DOCTYPE html><html><head><meta charset='utf-8'>
 <title>Promotion Projection — {target['Name']}</title>
 <style>
-body{{font-family:Georgia,'Times New Roman',serif;color:#232821;max-width:820px;
-margin:24px auto;padding:0 20px;background:#F5F3EC;}}
-.header{{background:#FDFCF8;border-top:4px double #A6802A;border-bottom:4px double #A6802A;
-border-left:1px solid #D8D3C2;border-right:1px solid #D8D3C2;text-align:center;
-padding:18px 24px 14px;}}
-.header .motto{{color:#A6802A;font-size:11px;letter-spacing:.28em;text-transform:uppercase;}}
-.header h1{{margin:6px 0 3px;font-size:22px;color:#2E3618;}}
-.header p{{margin:0;color:#5C6150;font-size:12px;}}
-.verdict{{background:#FDFCF8;border:1px solid #D8D3C2;border-left:5px solid #39431F;
+body{{font-family:Arial,Helvetica,sans-serif;color:#1F2937;max-width:820px;
+margin:24px auto;padding:0 20px;background:#FFFFFF;}}
+.header{{border-bottom:3px solid #3B82F6;padding-bottom:10px;margin-bottom:6px;}}
+.header h1{{margin:0 0 4px;font-size:22px;color:#111827;}}
+.header p{{margin:0;color:#6B7280;font-size:12px;}}
+.verdict{{background:#F0F7FF;border-left:4px solid #3B82F6;border-radius:6px;
 padding:12px 16px;margin:16px 0;font-size:15px;}}
-table{{border-collapse:collapse;width:100%;margin:10px 0 18px;font-size:13px;
-background:#FDFCF8;}}
-th,td{{border:1px solid #D8D3C2;padding:7px 10px;text-align:center;}}
-th{{background:#39431F;color:#FBFAF3;font-weight:600;}}
-tr th:first-child{{background:#4A5729;}}
-td.ok{{background:#EAF0E2;color:#33531F;font-weight:600;}}
-td.na{{color:#77785F;font-style:italic;}}
-td.dt{{color:#39431F;font-weight:600;}}
-h3{{color:#2E3618;border-bottom:2px solid #A6802A;padding-bottom:4px;}}
-.small{{font-size:12px;color:#5C6150;}}
-.disclaimer{{font-size:11px;color:#8A8B7A;border-top:1px solid #D8D3C2;
+table{{border-collapse:collapse;width:100%;margin:10px 0 18px;font-size:13px;}}
+th,td{{border:1px solid #E5E7EB;padding:7px 10px;text-align:center;}}
+th{{background:#F3F4F6;color:#111827;font-weight:600;}}
+td.ok{{background:#E7F6EC;color:#166534;font-weight:600;}}
+td.na{{color:#6B7280;font-style:italic;}}
+td.dt{{color:#111827;font-weight:600;}}
+h3{{color:#111827;border-bottom:1px solid #E5E7EB;padding-bottom:4px;}}
+.small{{font-size:12px;color:#6B7280;}}
+.disclaimer{{font-size:11px;color:#9CA3AF;border-top:1px solid #E5E7EB;
 padding-top:10px;margin-top:24px;}}
 </style></head><body>
-<div class='header'><div class='motto'>जीवन पर्यन्त कर्तव्य &nbsp;·&nbsp; Duty Unto Death</div>
-<h1>BSF Officers Promotion Projection</h1>
+<div class='header'><h1>BSF Officers Promotion Projection</h1>
 <p>Generated {pd.Timestamp.today().strftime('%d-%b-%Y')} &nbsp;|&nbsp; Computed as on {as_on.strftime('%d-%b-%Y')}</p></div>
 
 <h3>Officer Details</h3>
@@ -426,7 +378,7 @@ padding-top:10px;margin-top:24px;}}
 <tr><th>Date of Birth</th><td>{target['DOB'].strftime('%d-%b-%Y')}</td><th>Superannuation</th><td>{target['Retirement_Date'].strftime('%d-%b-%Y')}</td></tr>
 </table>
 
-<div class='verdict'><b>Assessment:</b> {verdict_html}</div>
+<div class='verdict'><b>Verdict:</b> {verdict_html}</div>
 
 <h3>Promotion Projections</h3>
 <table><tr><th>Rank</th>{''.join(f'<th>{s}</th>' for s in SCENARIO_ORDER)}</tr>{rows_html}</table>
@@ -470,16 +422,14 @@ def build_text_report(target, verdict_plain, scenarios, as_on):
 
 
 # ----------------------------- UI -------------------------------------------
-st.markdown(f"""
-<div class="bsf-header">
-  <div class="motto">जीवन पर्यन्त कर्तव्य &nbsp;·&nbsp; Duty Unto Death</div>
-  <h1>BSF Officers Promotion Model</h1>
-  <div class="stars">★ ★ ★</div>
-  <p class="sub">Seniority-based projection &nbsp;·&nbsp; computed as on
-  <b>{as_on.strftime('%d-%b-%Y')}</b> &nbsp;·&nbsp; calibrated to the latest promotion orders</p>
-</div>""", unsafe_allow_html=True)
+st.title("BSF Officers Promotion Model")
+st.caption(f"Computed as on {as_on.strftime('%d-%b-%Y')} · promotion lines auto-adjust "
+           "to the latest promotion orders (see sidebar)")
 
-irla = st.text_input("Enter IRLA Number:")
+st.markdown("#### 🔍 Enter IRLA here")
+irla = st.text_input("Enter IRLA here", label_visibility="collapsed",
+                     placeholder="Type IRLA number and press Enter  (e.g. 19975580)",
+                     help="Your IRLA number as printed in the gradation list")
 
 if irla:
     res = df[df['IRLA No'] == clean_irla(irla)]
@@ -498,11 +448,8 @@ if irla:
                                           as_on, dyn_thresh, dyn_cr_thresh,
                                           anchor_snos, vrs_rate)
 
-        st.markdown(f"""
-        <div class="officer-card">
-          <span>{FULL_RANK.get(current_code, target['Rank'])}</span>
-          <h2>{target['Name']}</h2>
-        </div>""", unsafe_allow_html=True)
+        st.subheader(target['Name'])
+        st.caption(FULL_RANK.get(current_code, str(target['Rank'])))
 
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("S.No", int(target['S. No']))
@@ -513,8 +460,8 @@ if irla:
 
         # ---- Verdict ----
         verdict_html = make_verdict(scenarios, current_code)
-        st.markdown(f"<div class='verdict-card'><div class='v-label'>Assessment</div>"
-                    f"{verdict_html}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='verdict-card'><b>Verdict:</b> {verdict_html}</div>",
+                    unsafe_allow_html=True)
 
         # ---- Projections table ----
         st.subheader("Promotion Projections")
@@ -522,10 +469,10 @@ if irla:
 
         def cell_style(v):
             if v == "Already Achieved":
-                return 'background-color:#EAF0E2;color:#33531F;font-weight:600'
+                return 'background-color:#E7F6EC;color:#166534;font-weight:600'
             if v == "Will not achieve":
-                return 'color:#77785F;font-style:italic'
-            return 'color:#39431F;font-weight:600'
+                return 'color:#6B7280;font-style:italic'
+            return 'color:#111827;font-weight:600'
 
         styler = proj.style
         styler = styler.map(cell_style) if hasattr(styler, 'map') else styler.applymap(cell_style)
