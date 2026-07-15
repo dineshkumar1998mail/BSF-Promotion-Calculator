@@ -32,10 +32,12 @@ SCENARIO_ORDER = ['Normal', 'VRS (No CR)', 'With CR', 'CR + VRS']
 # ----------------------------- STYLING --------------------------------------
 st.markdown("""
 <style>
-/* Light grey app background */
-.stApp {background-color: #E9EDF2;}
-[data-testid="stSidebar"] {background-color: #DFE5EC;}
-[data-testid="stHeader"] {background-color: #E9EDF2;}
+/* Readability-first theme: soft off-white background, near-black text */
+.stApp {background-color: #F7F8FA; color: #1A2733;}
+[data-testid="stSidebar"] {background-color: #EEF1F5;}
+[data-testid="stHeader"] {background-color: #F7F8FA;}
+p, li, label, .stMarkdown {color: #1A2733;}
+.stCaption, [data-testid="stCaptionContainer"] {color: #4A5A6B !important;}
 .block-container {padding-top: 1.2rem;}
 .bsf-header {
     background: linear-gradient(100deg, #0F3057 0%, #1F4E79 55%, #0B7285 100%);
@@ -72,7 +74,7 @@ st.markdown("""
     padding: .7rem .9rem;
     box-shadow: 0 1px 4px rgba(15,48,87,.08);
 }
-[data-testid="stMetricLabel"] {color:#5A7184;}
+[data-testid="stMetricLabel"] {color:#44556A;}
 h3 {color:#0F3057;}
 </style>
 """, unsafe_allow_html=True)
@@ -369,10 +371,10 @@ th,td{{border:1px solid #D5DEE9;padding:7px 10px;text-align:center;}}
 th{{background:#0F3057;color:#fff;font-weight:600;}}
 tr th:first-child{{background:#1F4E79;}}
 td.ok{{background:#E8F5E9;color:#1B5E20;font-weight:600;}}
-td.na{{color:#9AA5B1;font-style:italic;}}
+td.na{{color:#66788C;font-style:italic;}}
 td.dt{{color:#0F3057;font-weight:600;}}
 h3{{color:#0F3057;border-bottom:2px solid #C9A227;padding-bottom:4px;}}
-.small{{font-size:12px;color:#5A7184;}}
+.small{{font-size:12px;color:#44556A;}}
 .disclaimer{{font-size:11px;color:#8896A6;border-top:1px solid #D5DEE9;
 padding-top:10px;margin-top:24px;}}
 </style></head><body>
@@ -482,7 +484,7 @@ if irla:
             if v == "Already Achieved":
                 return 'background-color:#E8F5E9;color:#1B5E20;font-weight:600'
             if v == "Will not achieve":
-                return 'color:#9AA5B1;font-style:italic'
+                return 'color:#66788C;font-style:italic'
             return 'color:#0F3057;font-weight:600'
 
         styler = proj.style
