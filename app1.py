@@ -1,185 +1,286 @@
-import streamlit as st
-import pandas as pd
+import io
+import os
+
 import numpy as np
+import pandas as pd
+import streamlit as st
 from pandas.tseries.offsets import MonthEnd
-import datetime
 
 st.set_page_config(page_title="BSF Officers Promotion Model", layout="wide")
 
+# ----------------------------- CONSTANTS -----------------------------------
+RANK_ORDER = ['DC', '2IC', 'COMDT', 'DIG', 'IG', 'ADG']
+
+# Static fallback thresholds (seniority position at which promotion occurs)
+BASELINE_THRESH = {'ADG': 1, 'IG': 22, 'DIG': 181, 'COMDT': 554, '2IC': 1143, 'DC': 2452}
+CR_THRESH = {'ADG': 1, 'IG': 33, 'DIG': 223, 'COMDT': 825, '2IC': 1698, 'DC': 2910}
+
+# Junior-most officer promoted to each rank (IRLA), as of 08-Jul-2026.
+# These are only DEFAULTS. When a new DPC / promotion order comes out, either:
+#   (a) update anchors.csv in the repo (columns: Rank, IRLA No)  -> permanent, or
+#   (b) type the new IRLA in the sidebar                          -> this session only.
+DEFAULT_ANCHORS = {'COMDT': '19975580', '2IC': '10694886', 'DC': '41427187'}
+
+VRS_ANNUAL_DEFAULT = 50.0
+
+
+# ----------------------------- HELPERS --------------------------------------
+def clean_irla(x):
+    s = str(x).strip()
+    if s.endswith('.0'):
+        s = s[:-2]
+    return s
+
+
 @st.cache_data
-def load_data():
-    df = pd.read_csv('gradation_list.csv')
+def load_data(file_bytes=None):
+    if file_bytes:
+        df = pd.read_csv(io.BytesIO(file_bytes))
+    else:
+        df = pd.read_csv('gradation_list.csv')
+
     df['S. No'] = pd.to_numeric(df['S. No'], errors='coerce')
     df = df.dropna(subset=['S. No'])
-    df['DOB'] = pd.to_datetime(df['Date of Birth'], errors='coerce')
+
+    # Indian date format is DD-MM-YYYY -> dayfirst=True (was a silent bug earlier)
+    df['DOB'] = pd.to_datetime(df['Date of Birth'], errors='coerce', dayfirst=True)
     df = df.dropna(subset=['DOB'])
     df = df.sort_values('S. No').reset_index(drop=True)
-    df['Retirement_Date'] = df['DOB'] + pd.DateOffset(years=60) + MonthEnd(0)
-    df['IRLA No'] = df['IRLA No'].astype(str).str.strip()
+
+    # Govt superannuation rule: retire on the last day of the month in which the
+    # officer attains 60. If born on the 1st of a month, retirement falls on the
+    # last day of the PRECEDING month.
+    sixty = df['DOB'] + pd.DateOffset(years=60)
+    df['Retirement_Date'] = sixty + MonthEnd(0)
+    born_first = df['DOB'].dt.day == 1
+    df.loc[born_first, 'Retirement_Date'] = sixty[born_first] - MonthEnd(1)
+
+    df['IRLA No'] = df['IRLA No'].map(clean_irla)
     return df
 
-def calculate_scenarios(df, target_sno, target_ret):
+
+@st.cache_data
+def load_anchor_file():
+    """Optional anchors.csv in the repo overrides DEFAULT_ANCHORS permanently."""
+    if os.path.exists('anchors.csv'):
+        try:
+            a = pd.read_csv('anchors.csv', dtype=str)
+            return {str(r).strip().upper(): clean_irla(i)
+                    for r, i in zip(a['Rank'], a['IRLA No'])}
+        except Exception:
+            return {}
+    return {}
+
+
+def live_position(df, sno, as_on):
+    """Current seniority position of officer with serial number `sno`,
+    counting only officers still serving on `as_on`."""
+    return int(((df['S. No'] <= sno) & (df['Retirement_Date'] > as_on)).sum())
+
+
+# ----------------------------- SIDEBAR (CALIBRATION) ------------------------
+st.sidebar.header("⚙️ Model Calibration")
+
+uploaded = st.sidebar.file_uploader(
+    "Updated gradation list (optional CSV)", type=['csv'],
+    help="Upload a fresh gradation list to override the bundled one. "
+         "Same columns required: S. No, IRLA No, Name, Rank, Date of Birth.")
+
+df = load_data(uploaded.getvalue() if uploaded else None)
+
+as_on = pd.Timestamp(st.sidebar.date_input(
+    "Calculations as-on date", value=pd.Timestamp.today().normalize(),
+    help="All seniority positions and simulations start from this date. "
+         "Defaults to today, so the model stays current automatically."))
+
+st.sidebar.subheader("📌 Latest Promotion Anchors")
+st.sidebar.caption(
+    "If a new/unexpected DPC or promotion order is issued, enter the IRLA of the "
+    "**junior-most officer promoted** to that rank. All thresholds recalibrate "
+    "automatically. To make an update permanent for all users, edit `anchors.csv` "
+    "in the repo (sidebar entries last only for this session).")
+
+file_anchors = load_anchor_file()
+anchor_inputs = {}
+for r in ['DC', '2IC', 'COMDT', 'DIG', 'IG']:
+    default_val = file_anchors.get(r, DEFAULT_ANCHORS.get(r, ''))
+    anchor_inputs[r] = st.sidebar.text_input(f"Junior-most {r} (IRLA)", value=default_val)
+
+vrs_annual = st.sidebar.number_input(
+    "Assumed VRS / premature exits per year (across senior cadre)",
+    min_value=0.0, max_value=500.0, value=VRS_ANNUAL_DEFAULT, step=5.0)
+
+# --- Dynamic threshold recalibration from anchors ---------------------------
+dyn_thresh = dict(BASELINE_THRESH)
+dyn_cr_thresh = dict(CR_THRESH)
+anchor_snos = {}
+calib_rows = []
+
+for r, irla_a in anchor_inputs.items():
+    irla_a = clean_irla(irla_a)
+    if not irla_a:
+        continue
+    row = df[df['IRLA No'] == irla_a]
+    if row.empty:
+        st.sidebar.warning(f"{r} anchor IRLA '{irla_a}' not found in list — "
+                           f"using static threshold {BASELINE_THRESH[r]}.")
+        continue
+    sno = int(row.iloc[0]['S. No'])
+    anchor_snos[r] = sno
+    pos = live_position(df, sno, as_on)          # current promotion line for rank r
+    delta = pos - BASELINE_THRESH[r]
+    dyn_thresh[r] = max(1, pos)
+    dyn_cr_thresh[r] = max(1, CR_THRESH[r] + delta)  # shift CR line by same delta
+    calib_rows.append({'Rank': r, 'Anchor IRLA': irla_a, 'Anchor S.No': sno,
+                       'Live promotion line': pos,
+                       'Static baseline': BASELINE_THRESH[r], 'Shift': delta})
+
+
+# ----------------------------- CORE MODEL -----------------------------------
+def calculate_scenarios(df, target_sno, target_ret, as_on,
+                        thresholds, cr_thresholds, anchor_snos, vrs_annual):
     target_sno = int(target_sno)
-    
-    # --- CORE GROUND REALITY INPUTS ---
-    anchors = {'COMDT': '19975610', '2IC': '10694886', 'DC': '41427187'}
-    
-    # Structural Gate Positions (Absolute Baseline Pyramidal Capacities)
-    baseline_capacities = {'ADG': 1, 'IG': 22, 'DIG': 181, 'COMDT': 554, '2IC': 1143, 'DC': 2452}
-    cr_capacities = {'ADG': 1, 'IG': 33, 'DIG': 223, 'COMDT': 825, '2IC': 1698, 'DC': 2910}
-    
-    # Resolve explicit anchors to current S.No positions
-    anchor_snos = {}
-    for rank in ['COMDT', '2IC', 'DC']:
-        match = df[df['IRLA No'] == anchors[rank]]
-        if not match.empty:
-            anchor_snos[rank] = int(match.iloc[0]['S. No'])
-        else:
-            anchor_snos[rank] = baseline_capacities[rank]
+    seniors = df[df['S. No'] < target_sno]
+    live_seniors = seniors[seniors['Retirement_Date'] > as_on].copy()
+    live_rank = len(live_seniors) + 1
+    future_rets = live_seniors['Retirement_Date'].sort_values().reset_index(drop=True)
 
-    # --- CASCADING REALITY ANCHOR MATHEMATICS ---
-    # Derive operational anchors for DIG and IG relative to the moving Commandant line
-    comdt_shift = anchor_snos['COMDT'] - baseline_capacities['COMDT']
-    
-    anchor_snos['DIG'] = max(baseline_capacities['DIG'], baseline_capacities['DIG'] + comdt_shift)
-    anchor_snos['IG'] = max(baseline_capacities['IG'], baseline_capacities['IG'] + comdt_shift)
-    anchor_snos['ADG'] = baseline_capacities['ADG']
+    def already_achieved(rank, th):
+        # Anchor check: if the junior-most promoted officer is junior to (or is)
+        # the target, the target has already crossed this rank.
+        if anchor_snos.get(rank) and target_sno <= anchor_snos[rank]:
+            return True
+        return live_rank <= th[rank]
 
-    current_today = pd.Timestamp(datetime.date.today())
-
-    # --- 1. FIXED PURE RETIREMENTS COLUMN (NORMAL) ---
-    active_seniors_normal = df[(df['S. No'] < target_sno) & (df['Retirement_Date'] > current_today)].copy()
-    raw_future_rets = active_seniors_normal['Retirement_Date'].sort_values().reset_index(drop=True)
-    
-    rem_seniors_retiring_before_target = len(active_seniors_normal[active_seniors_normal['Retirement_Date'] <= target_ret])
-    final_sen_normal = (len(active_seniors_normal) + 1) - rem_seniors_retiring_before_target
-
+    # ---- 1. Normal model: only natural age-60 retirements -------------------
     promo_normal = {}
-    for rank in ['DC', '2IC', 'COMDT', 'DIG', 'IG', 'ADG']:
-        if target_sno <= anchor_snos[rank]:
-            promo_normal[rank] = "Already Achieved"
+    for r in RANK_ORDER:
+        if already_achieved(r, thresholds):
+            promo_normal[r] = "Already Achieved"
+            continue
+        needed = live_rank - thresholds[r]
+        if needed > len(future_rets):
+            promo_normal[r] = "Will not achieve"
         else:
-            effective_rank_pos = target_sno - anchor_snos[rank]
-            
-            if effective_rank_pos <= 0:
-                promo_normal[rank] = "Already Achieved"
-            elif effective_rank_pos > len(raw_future_rets):
-                promo_normal[rank] = "Will not achieve"
-            else:
-                date = raw_future_rets.iloc[effective_rank_pos - 1]
-                promo_normal[rank] = date.strftime('%d-%b-%Y') if date <= target_ret else "Will not achieve"
+            d = future_rets.iloc[needed - 1]
+            promo_normal[r] = d.strftime('%d-%b-%Y') if d <= target_ret else "Will not achieve"
 
-    # --- 2. THE DYNAMIC ATTRITION SIMULATION ENGINE ---
-    def run_simulation(capacities, use_vrs=True, is_cr=False):
-        np.random.seed(42)
-        sim_pool = df[(df['S. No'] < target_sno) & (df['Retirement_Date'] > current_today)].copy()
-        initial_pool_size = max(1, len(sim_pool))
-        
-        sim_date = (current_today + pd.DateOffset(months=1)).replace(day=1)
-        promo_dates = {}
-        
-        # Calculate dynamic gates ahead of loop execution
-        effective_gates = {}
-        for r, cap in capacities.items():
-            base_anchor = anchor_snos[r]
-            if is_cr:
-                # Expand the gate dynamically based on structural growth margins
-                expansion_bonus = capacities[r] - baseline_capacities[r]
-                effective_gates[r] = base_anchor + expansion_bonus
-            else:
-                effective_gates[r] = base_anchor
+    final_sen_normal = live_rank - int((future_rets <= target_ret).sum())
 
-        # Initial Boundary Enforcement
-        for r, gate in effective_gates.items():
-            if target_sno <= gate:
-                promo_dates[r] = "Already Achieved"
+    # ---- 2. Attrition simulation (VRS / CR variants) -------------------------
+    def run_attrition_sim(th, use_vrs=True):
+        rng = np.random.default_rng(42)   # deterministic, so results are stable
+        pool = live_seniors.copy()
+        n0 = max(1, len(pool))
+        promo = {}
+        for r in RANK_ORDER:
+            if already_achieved(r, th):
+                promo[r] = "Already Achieved"
 
-        while sim_date <= target_ret and not sim_pool.empty:
-            m_end = sim_date + MonthEnd(0)
-            
-            # 1. Clear Natural Retirements
-            sim_pool = sim_pool[sim_pool['Retirement_Date'] > m_end]
-            
-            # 2. Apply Proportional Attrition
-            if use_vrs and not sim_pool.empty:
-                current_vrs_annual = 50.0 * (len(sim_pool) / initial_pool_size)
-                monthly_vrs_goal = current_vrs_annual / 12.0
-                n_vrs = int(np.floor(monthly_vrs_goal + np.random.random()))
-                
+        cur = as_on.replace(day=1)
+        while cur <= target_ret and not pool.empty:
+            m_end = cur + MonthEnd(0)
+
+            # Step A: natural age-60 retirements this month
+            pool = pool[pool['Retirement_Date'] > m_end]
+
+            # Step B: cadre-linked VRS (rate shrinks with the pool; officers
+            # removed here can't later double-count as natural retirements)
+            if use_vrs and not pool.empty:
+                monthly_goal = (vrs_annual * len(pool) / n0) / 12.0
+                n_vrs = int(np.floor(monthly_goal + rng.random()))
                 if n_vrs > 0:
-                    vrs_idx = np.random.choice(sim_pool.index, min(n_vrs, len(sim_pool)), replace=False)
-                    sim_pool = sim_pool.drop(vrs_idx)
-            
-            # 3. Dynamic Absolute Index Calculation
-            sim_progress = initial_pool_size - len(sim_pool)
-            current_absolute_sno = target_sno - sim_progress
-            
-            for r, gate in effective_gates.items():
-                if r not in promo_dates:
-                    if current_absolute_sno <= gate:
-                        promo_dates[r] = m_end.strftime('%d-%b-%Y')
-            
-            if current_absolute_sno <= 1:
+                    drop_idx = rng.choice(pool.index, size=min(n_vrs, len(pool)),
+                                          replace=False)
+                    pool = pool.drop(drop_idx)
+
+            # Step C: check promotion lines
+            rank_pos = len(pool) + 1
+            for r in RANK_ORDER:
+                if r not in promo and rank_pos <= th[r]:
+                    promo[r] = m_end.strftime('%d-%b-%Y')
+
+            if rank_pos <= 1:
                 break
-            sim_date = (sim_date + pd.DateOffset(months=1)).replace(day=1)
-            
-        # Complete unreached fields cleanly
-        for r, gate in effective_gates.items():
-            if r not in promo_dates:
-                promo_dates[r] = "Already Achieved" if target_sno <= gate else "Will not achieve"
-                
-        return promo_dates, max(1, len(sim_pool) + 1)
+            cur = (cur + pd.DateOffset(months=1)).replace(day=1)
 
-    # Compute clean, isolated models
-    promo_vrs_only, vrs_final_sen = run_simulation(baseline_capacities, use_vrs=True, is_cr=False)
-    promo_cr_only, _ = run_simulation(cr_capacities, use_vrs=False, is_cr=True)
-    promo_cr_vrs, _ = run_simulation(cr_capacities, use_vrs=True, is_cr=True)
+        for r in RANK_ORDER:
+            promo.setdefault(r, "Will not achieve")
+        return promo, len(pool) + 1
 
-    # Tracker Logic (Baseline Normal)
-    seniority_tracker = {}
-    for y in range(current_today.year + 1, target_ret.year + 1):
+    promo_vrs, final_sen_vrs = run_attrition_sim(thresholds, use_vrs=True)
+    promo_cr, _ = run_attrition_sim(cr_thresholds, use_vrs=False)
+    promo_cr_vrs, _ = run_attrition_sim(cr_thresholds, use_vrs=True)
+
+    # ---- 3. Seniority tracker (1 Jan each year, normal model) ---------------
+    tracker = {}
+    for y in range(as_on.year + 1, target_ret.year + 1):
         jan1 = pd.Timestamp(year=y, month=1, day=1)
-        rets_before_jan1 = (raw_future_rets < jan1).sum()
-        current_relative_rank = (len(active_seniors_normal) + 1) - rets_before_jan1
-        seniority_tracker[str(y)] = max(1, current_relative_rank)
-    
-    return {'Normal': promo_normal, 
-            'VRS (No CR)': promo_vrs_only, 
-            'With CR': promo_cr_only, 
-            'CR + VRS': promo_cr_vrs}, seniority_tracker, vrs_final_sen, final_sen_normal
+        tracker[str(y)] = live_rank - int((future_rets < jan1).sum())
 
-# --- UI LAYER ---
+    scenarios = {'Normal': promo_normal,
+                 'VRS (No CR)': promo_vrs,
+                 'With CR': promo_cr,
+                 'CR + VRS': promo_cr_vrs}
+    return scenarios, tracker, final_sen_vrs, final_sen_normal, live_rank
+
+
+# ----------------------------- UI -------------------------------------------
 st.title("🛡️ BSF Officers Promotion Model")
-df = load_data()
+st.caption(f"All figures computed live as on **{as_on.strftime('%d-%b-%Y')}**. "
+           "Promotion lines auto-recalibrate from the anchors in the sidebar.")
 
-arla = st.text_input("Enter IRLA Number:")
+if calib_rows:
+    with st.expander("🔧 Current calibration (dynamic promotion lines)"):
+        st.table(pd.DataFrame(calib_rows).set_index('Rank'))
+        st.caption("Live promotion line = current seniority position of the "
+                   "junior-most officer already promoted to that rank. Cadre-Review "
+                   "lines are shifted by the same amount.")
 
-if arla:
-    res = df[df['IRLA No'] == str(arla).strip()]
-    if not res.empty:
+irla = st.text_input("Enter IRLA Number:")
+
+if irla:
+    res = df[df['IRLA No'] == clean_irla(irla)]
+    if res.empty:
+        st.error("IRLA number not found in the gradation list.")
+    else:
         target = res.iloc[0]
         st.header(f"Officer: {target['Name']}")
-        
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Current Rank", target['Rank'])
+
+        if target['Retirement_Date'] <= as_on:
+            st.warning("This officer has already superannuated as on the selected date. "
+                       "Projections below are shown for reference only.")
+
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Current Rank", str(target['Rank']))
         c2.metric("S.No", int(target['S. No']))
         c3.metric("DOB", target['DOB'].strftime('%d-%b-%Y'))
         c4.metric("Retirement", target['Retirement_Date'].strftime('%d-%b-%Y'))
-        
-        promos, sens, f_vrs, f_norm = calculate_scenarios(df, target['S. No'], target['Retirement_Date'])
-        
+
+        (promos, tracker, f_vrs, f_norm,
+         live_rank) = calculate_scenarios(df, target['S. No'], target['Retirement_Date'],
+                                          as_on, dyn_thresh, dyn_cr_thresh,
+                                          anchor_snos, vrs_annual)
+        c5.metric("Live Seniority Today", f"#{live_rank}",
+                  help="Position among officers still serving as on the selected date.")
+
         st.divider()
-        st.subheader("📈 Proportional Promotion Projections")
-        st.table(pd.DataFrame(promos).reindex(['DC', '2IC', 'COMDT', 'DIG', 'IG', 'ADG']))
-        
+        st.subheader("📈 Promotion Projections (auto-calibrated)")
+        st.table(pd.DataFrame(promos).reindex(RANK_ORDER))
+
         st.divider()
         c_a, c_b = st.columns(2)
-        c_a.metric("Final Seniority (Normal Model)", f"Rank #{max(1, int(f_norm))}")
-        c_b.metric("Final Seniority (VRS Model)", f"Rank #{max(1, int(f_vrs))}")
-        
+        c_a.metric("Final Seniority (Normal Model)", f"Rank #{max(1, int(f_norm))}",
+                   help="Based purely on natural age-60 retirements.")
+        c_b.metric("Final Seniority (VRS Model)", f"Rank #{max(1, int(f_vrs))}",
+                   help="VRS rate reduces as cadre shrinks; no double-counting "
+                        "of future retirements.")
+
         st.divider()
-        st.subheader("📅 Seniority Tracker (Jan 1st - Normal Model)")
-        if sens:
-            st.dataframe(pd.DataFrame(list(sens.items()), columns=['Year', 'Seniority Pos']).set_index('Year').T)
+        st.subheader("📅 Seniority Tracker (1 Jan each year — Normal Model)")
+        if tracker:
+            st.dataframe(pd.DataFrame(list(tracker.items()),
+                                      columns=['Year', 'Seniority Pos'])
+                         .set_index('Year').T)
         else:
-            st.write("Retirement falls within the current calendar year.")
+            st.info("Officer retires before the next 1 January — no tracker to show.")
