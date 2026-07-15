@@ -25,7 +25,7 @@ CR_THRESH = {'ADG': 1, 'IG': 33, 'DIG': 223, 'COMDT': 825, '2IC': 1698, 'DC': 29
 # or use the sidebar for session-only changes.
 DEFAULT_ANCHORS = {'COMDT': '19975580', '2IC': '10694886', 'DC': '41427187'}
 
-VRS_ANNUAL_DEFAULT = 50.0
+VRS_RATE_DEFAULT = 2.0  # % of serving seniors exiting per year
 
 SCENARIO_ORDER = ['Normal', 'VRS (No CR)', 'With CR', 'CR + VRS']
 
@@ -173,9 +173,11 @@ for r in ['DC', '2IC', 'COMDT', 'DIG', 'IG']:
     default_val = file_anchors.get(r, DEFAULT_ANCHORS.get(r, ''))
     anchor_inputs[r] = st.sidebar.text_input(f"Junior-most {r} (IRLA)", value=default_val)
 
-vrs_annual = st.sidebar.number_input(
-    "Assumed VRS / premature exits per year (across senior cadre)",
-    min_value=0.0, max_value=500.0, value=VRS_ANNUAL_DEFAULT, step=5.0)
+vrs_rate = st.sidebar.number_input(
+    "Assumed VRS / premature exit rate (% of serving seniors per year)",
+    min_value=0.0, max_value=20.0, value=VRS_RATE_DEFAULT, step=0.5,
+    help="Applied as a percentage of the officer's own senior pool, so the "
+         "assumption scales correctly for junior and senior officers alike.")
 
 dyn_thresh = dict(BASELINE_THRESH)
 dyn_cr_thresh = dict(CR_THRESH)
@@ -204,7 +206,7 @@ for r, irla_a in anchor_inputs.items():
 
 # ----------------------------- CORE MODEL -----------------------------------
 def calculate_scenarios(df, target_sno, target_ret, as_on,
-                        thresholds, cr_thresholds, anchor_snos, vrs_annual):
+                        thresholds, cr_thresholds, anchor_snos, vrs_rate):
     target_sno = int(target_sno)
     seniors = df[df['S. No'] < target_sno]
     live_seniors = seniors[seniors['Retirement_Date'] > as_on].copy()
@@ -235,7 +237,6 @@ def calculate_scenarios(df, target_sno, target_ret, as_on,
     def run_attrition_sim(th, use_vrs=True):
         rng = np.random.default_rng(42)
         pool = live_seniors.copy()
-        n0 = max(1, len(pool))
         promo = {}
         for r in RANK_ORDER:
             if already_achieved(r, th):
@@ -247,7 +248,8 @@ def calculate_scenarios(df, target_sno, target_ret, as_on,
             pool = pool[pool['Retirement_Date'] > m_end]
 
             if use_vrs and not pool.empty:
-                monthly_goal = (vrs_annual * len(pool) / n0) / 12.0
+                # percentage of the CURRENT pool -> tapers naturally as it shrinks
+                monthly_goal = (vrs_rate / 100.0) * len(pool) / 12.0
                 n_vrs = int(np.floor(monthly_goal + rng.random()))
                 if n_vrs > 0:
                     drop_idx = rng.choice(pool.index, size=min(n_vrs, len(pool)),
@@ -326,7 +328,7 @@ def make_verdict(scenarios, current_code):
 
 # ----------------------------- REPORT ----------------------------------------
 def build_html_report(target, verdict_html, scenarios, tracker,
-                      as_on, vrs_annual, calib_rows):
+                      as_on, vrs_rate, calib_rows):
     proj = pd.DataFrame(scenarios).reindex(RANK_ORDER)
     rows_html = ""
     for r in RANK_ORDER:
@@ -389,9 +391,10 @@ padding-top:10px;margin-top:24px;}}
 
 <h3>Assumptions</h3>
 <p class='small'>Normal: natural age-60 retirements only. VRS scenarios assume
-{vrs_annual:.0f} premature exits/year across the senior cadre, tapering as the cadre
-shrinks. CR scenarios assume expanded Cadre-Review sanctioned strength.
-No supersession, deputation vacancy or DPC delay is modelled.</p>
+{vrs_rate:.1f}% of serving seniors exiting prematurely per year (applied to the
+shrinking pool, so absolute numbers taper over time). CR scenarios assume expanded
+Cadre-Review sanctioned strength. No supersession, deputation vacancy or DPC delay
+is modelled.</p>
 {calib_note}
 
 <p class='disclaimer'>This is an unofficial statistical projection based on the
@@ -447,7 +450,7 @@ if irla:
         (scenarios, tracker, f_vrs, f_norm,
          live_rank) = calculate_scenarios(df, target['S. No'], target['Retirement_Date'],
                                           as_on, dyn_thresh, dyn_cr_thresh,
-                                          anchor_snos, vrs_annual)
+                                          anchor_snos, vrs_rate)
 
         st.markdown(f"""
         <div class="officer-card">
@@ -486,7 +489,7 @@ if irla:
         c_a.metric("Final Seniority (Normal Model)", f"Rank #{max(1, int(f_norm))}",
                    help="Based purely on natural age-60 retirements.")
         c_b.metric("Final Seniority (VRS Model)", f"Rank #{max(1, int(f_vrs))}",
-                   help="VRS rate reduces as cadre shrinks; no double-counting.")
+                   help="VRS applied as a % of serving seniors; no double-counting.")
 
         # ---- Tracker ----
         st.subheader("📅 Seniority Tracker (1 Jan each year — Normal Model)")
@@ -502,7 +505,7 @@ if irla:
         st.subheader("⬇️ Download One-Page Report")
         verdict_plain = (verdict_html.replace('<b>', '').replace('</b>', ''))
         html_report = build_html_report(target, verdict_html, scenarios,
-                                        tracker, as_on, vrs_annual, calib_rows)
+                                        tracker, as_on, vrs_rate, calib_rows)
         text_report = build_text_report(target, verdict_plain, scenarios, as_on)
 
         d1, d2 = st.columns(2)
